@@ -1,0 +1,1210 @@
+{
+  "sources": [
+    {
+      "id": "ascendi-electronic-2026",
+      "name": "Ascendi electronic tolls, standard classes 1–4, 2026",
+      "url": "https://ascendi.pt/portagens-eletronicas/",
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "vialivre-a28",
+      "name": "Via Livre current A28 charging points",
+      "url": "https://www.vialivre.pt/pt-pt/portagens/portagens-na-a28-2/",
+      "verifiedOn": "2026-11-22"
+    },
+    {
+      "id": "lusoponte-p25",
+      "name": "Lusoponte Ponte 25 de Abril standard tariffs; Almada to Lisbon only",
+      "url": "https://www.lusoponte.pt/25-de-abril/informacoes-gerais",
+      "verifiedOn": "2026-11-22"
+    },
+    {
+      "id": "lusoponte-pvg",
+      "name": "Lusoponte Ponte Vasco da Gama standard tariffs; Montijo to Lisbon only",
+      "url": "https://www.lusoponte.pt/vasco-da-gama/informacoes-gerais",
+      "verifiedOn": "2026-11-22"
+    },
+    {
+      "id": "ip-zero-2026",
+      "name": "IP: abolished A24 and entire A25 tolls",
+      "url": "https://servicos.infraestruturasdeportugal.pt/portagens-ips",
+      "verifiedOn": "2026-11-22"
+    },
+    {
+      "id": "brisa-open-2026",
+      "name": "Brisa official open-system barrier tariffs, page 13",
+      "url": "https://www.brisaconcessao.pt/Portals/0/Documentos/TabelaEcadaTaxas_23iva_25082026_v7.pdf",
+      "pages": [
+        13
+      ],
+      "effectiveFrom": "2026-08-26"
+    },
+    {
+      "id": "ascendi-traditional-2026",
+      "name": "Ascendi A16 traditional tolls, 2026",
+      "url": "https://ascendi.pt/portagens-tradicionais/",
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "ip-calculator-a19-2026",
+      "name": "IP official calculator: Porto de Mós–Leiria 1.45/2.50 EUR; Batalha–Leiria 0.75/1.30 EUR (classes 1/2). Class 3/4 corrected by Lei 6/2026.",
+      "url": "https://portagens.infraestruturasdeportugal.pt/",
+      "verifiedOn": "2026-11-22"
+    },
+    {
+      "id": "lei-6-2026",
+      "name": "Lei 6/2026: class 3/4 toll suspension on A19 São Jorge–Leiria Sul and A8 Leiria Sul–Pousos",
+      "url": "https://diariodarepublica.pt/dr/detalhe/lei/6-2026-1058701611",
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "a41-exemption-2026",
+      "name": "Decreto-Lei 155-A/2026, article 5: A41 class 3/4 exemption",
+      "url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/155-a-2026-1153967375",
+      "effectiveFrom": "2026-09-15"
+    },
+    {
+      "id": "ip-calculator-a8-ic36-2026",
+      "name": "IP calculator: EN1 + Circular Sul de Leiria to Pousos 0.65/1.10/1.45/1.60 EUR; class 3/4 corrected to zero by Lei 6/2026",
+      "url": "https://portagens.infraestruturasdeportugal.pt/",
+      "verifiedOn": "2026-11-22"
+    },
+    {
+      "id": "imt-a32-olival-2026",
+      "name": "IMT 2026 A32 Olival–A32/A1 section tariff",
+      "url": "https://www.imt-ip.pt/rodoviario/infraestruturas-rodoviarias/rede-rodoviaria/taxas-de-portagem/",
+      "verifiedOn": "2026-11-22"
+    },
+    {
+      "id": "ip-calculator-a33-2026",
+      "name": "IP calculator: Charneca da Caparica–Coina 1.60/2.85/3.70/4.05 EUR; Belverde–Coina 0.85/1.50/1.95/2.15 EUR. Difference identifies Queimada; both routes finish before the eastern Coina gantry.",
+      "url": "https://portagens.infraestruturasdeportugal.pt/",
+      "verifiedOn": "2026-11-22"
+    },
+    {
+      "id": "ip-calculator-a33-coina-2026",
+      "name": "IP calculator: Coina EN10 approach (Motel Seven)–Montijo via A33, full eastern section, 0.35/0.65/0.85/0.90 EUR. A route ending inside the section incorrectly returned zero and was rejected as evidence.",
+      "url": "https://portagens.infraestruturasdeportugal.pt/",
+      "verifiedOn": "2026-11-22"
+    }
+  ],
+  "stations": [
+    {
+      "id": "a17-mira-vagos",
+      "name": "A17 — Mira / Ponte Vagos",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        65,
+        110,
+        140,
+        160
+      ],
+      "points": [
+        {
+          "lat": 40.4609315,
+          "lon": -8.6935574
+        },
+        {
+          "lat": 40.4612281,
+          "lon": -8.6934489
+        }
+      ]
+    },
+    {
+      "id": "a17-vagos-ilhavo",
+      "name": "A17 — Vagos / Ílhavo",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        35,
+        55,
+        70,
+        80
+      ],
+      "points": [
+        {
+          "lat": 40.5620567,
+          "lon": -8.6150634
+        },
+        {
+          "lat": 40.5623637,
+          "lon": -8.6151296
+        }
+      ]
+    },
+    {
+      "id": "a17-aveiro-bernardo",
+      "name": "A17 — Aveiro Sul / São Bernardo",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        40,
+        70,
+        90,
+        105
+      ],
+      "points": [
+        {
+          "lat": 40.6175346,
+          "lon": -8.5890983
+        },
+        {
+          "lat": 40.6194332,
+          "lon": -8.5922994
+        }
+      ]
+    },
+    {
+      "id": "a29-estarreja",
+      "name": "A29 — Salreu / Estarreja",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        65,
+        110,
+        145,
+        165
+      ],
+      "points": [
+        {
+          "lat": 40.7536294,
+          "lon": -8.5419984
+        },
+        {
+          "lat": 40.7542195,
+          "lon": -8.542202
+        }
+      ]
+    },
+    {
+      "id": "a29-ovar",
+      "name": "A29 — Estarreja / Ovar",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        50,
+        85,
+        105,
+        120
+      ],
+      "points": [
+        {
+          "lat": 40.8378119,
+          "lon": -8.5645718
+        },
+        {
+          "lat": 40.8384992,
+          "lon": -8.5650322
+        }
+      ]
+    },
+    {
+      "id": "a29-arada",
+      "name": "A29 — Arada / Maceda",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        45,
+        85,
+        105,
+        115
+      ],
+      "points": [
+        {
+          "lat": 40.9082371,
+          "lon": -8.6059033
+        },
+        {
+          "lat": 40.9084703,
+          "lon": -8.6061802
+        }
+      ]
+    },
+    {
+      "id": "a29-miramar",
+      "name": "A29 — ER1-18 / Miramar",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        30,
+        55,
+        70,
+        75
+      ],
+      "points": [
+        {
+          "lat": 41.0790813,
+          "lon": -8.6348701
+        },
+        {
+          "lat": 41.079362,
+          "lon": -8.6345224
+        }
+      ]
+    },
+    {
+      "id": "a4-custoias",
+      "name": "A4 — Custóias / Via Norte",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        15,
+        25,
+        35,
+        35
+      ],
+      "points": [
+        {
+          "lat": 41.2071134,
+          "lon": -8.6287098
+        },
+        {
+          "lat": 41.206997,
+          "lon": -8.6291352
+        }
+      ]
+    },
+    {
+      "id": "a4-pedraponte",
+      "name": "A4 — Via Norte / Ponte da Pedra",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        15,
+        30,
+        40,
+        40
+      ],
+      "points": [
+        {
+          "lat": 41.2017158,
+          "lon": -8.6148235
+        },
+        {
+          "lat": 41.2023809,
+          "lon": -8.6175061
+        }
+      ]
+    },
+    {
+      "id": "a41-freixieiro",
+      "name": "A41 — Freixieiro / Aeroporto",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        15,
+        25,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 41.2318924,
+          "lon": -8.6844666
+        },
+        {
+          "lat": 41.2317878,
+          "lon": -8.6849052
+        }
+      ]
+    },
+    {
+      "id": "a41-lipor",
+      "name": "A41 — Lipor / EN13",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        15,
+        25,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 41.2381412,
+          "lon": -8.6517913
+        },
+        {
+          "lat": 41.2384954,
+          "lon": -8.6516583
+        }
+      ]
+    },
+    {
+      "id": "a41-maia",
+      "name": "A41 — EN13 / EN14",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        10,
+        20,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 41.2393729,
+          "lon": -8.6378974
+        },
+        {
+          "lat": 41.2395701,
+          "lon": -8.6375138
+        }
+      ]
+    },
+    {
+      "id": "a41-vermoim",
+      "name": "A41 — EN14 / EN107",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        25,
+        50,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 41.2396657,
+          "lon": -8.6181721
+        },
+        {
+          "lat": 41.2398045,
+          "lon": -8.6104124
+        }
+      ]
+    },
+    {
+      "id": "a41-alfena-oeste",
+      "name": "A41 — Maia / Alfena",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        10,
+        20,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 41.2391396,
+          "lon": -8.5491628
+        },
+        {
+          "lat": 41.2392335,
+          "lon": -8.5487466
+        }
+      ]
+    },
+    {
+      "id": "a41-alfena-este",
+      "name": "A41 — Alfena / Santo Tirso",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        45,
+        75,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 41.2354473,
+          "lon": -8.5138204
+        },
+        {
+          "lat": 41.2362182,
+          "lon": -8.514003
+        }
+      ]
+    },
+    {
+      "id": "a41-sobrado",
+      "name": "A41 — Ermida / IC24-IC25",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        5,
+        10,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 41.2321325,
+          "lon": -8.4651887
+        },
+        {
+          "lat": 41.2320132,
+          "lon": -8.4637546
+        }
+      ]
+    },
+    {
+      "id": "a42-lordelo",
+      "name": "A42 — IC24-IC25 / Lordelo",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        35,
+        65,
+        80,
+        90
+      ],
+      "points": [
+        {
+          "lat": 41.2444891,
+          "lon": -8.4357352
+        },
+        {
+          "lat": 41.2441286,
+          "lon": -8.4355587
+        }
+      ]
+    },
+    {
+      "id": "a42-pacos",
+      "name": "A42 — Paços de Ferreira / EN106 Sul",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        35,
+        60,
+        75,
+        85
+      ],
+      "points": [
+        {
+          "lat": 41.2595861,
+          "lon": -8.351489
+        },
+        {
+          "lat": 41.2596869,
+          "lon": -8.3510852
+        }
+      ]
+    },
+    {
+      "id": "a42-lousada",
+      "name": "A42 — EN106 Norte / Lousada",
+      "kind": "open",
+      "source": "ascendi-electronic-2026",
+      "cents": [
+        35,
+        65,
+        85,
+        100
+      ],
+      "points": [
+        {
+          "lat": 41.2887213,
+          "lon": -8.3138968
+        },
+        {
+          "lat": 41.2890276,
+          "lon": -8.3138292
+        }
+      ]
+    },
+    {
+      "id": "a28-angeiras",
+      "name": "A28 — Angeiras",
+      "kind": "open",
+      "source": "vialivre-a28",
+      "cents": [
+        55,
+        105,
+        135,
+        150
+      ],
+      "points": [
+        {
+          "lat": 41.2661958,
+          "lon": -8.7017032
+        },
+        {
+          "lat": 41.266371,
+          "lon": -8.7019232
+        }
+      ]
+    },
+    {
+      "id": "a28-povoa",
+      "name": "A28 — Póvoa",
+      "kind": "open",
+      "source": "vialivre-a28",
+      "cents": [
+        80,
+        130,
+        175,
+        195
+      ],
+      "points": [
+        {
+          "lat": 41.4306878,
+          "lon": -8.7447565
+        },
+        {
+          "lat": 41.4304504,
+          "lon": -8.7446521
+        }
+      ]
+    },
+    {
+      "id": "ponte-25-abril",
+      "name": "Ponte 25 de Abril — Almada → Lisboa",
+      "kind": "open",
+      "source": "lusoponte-p25",
+      "cents": [
+        225,
+        485,
+        655,
+        845
+      ],
+      "points": [
+        {
+          "lat": 38.675959,
+          "lon": -9.1740304
+        },
+        {
+          "lat": 38.6760016,
+          "lon": -9.1737114
+        },
+        {
+          "lat": 38.6760171,
+          "lon": -9.1735957
+        },
+        {
+          "lat": 38.675916,
+          "lon": -9.1743521
+        }
+      ]
+    },
+    {
+      "id": "ponte-vasco-gama",
+      "name": "Ponte Vasco da Gama — Montijo → Lisboa",
+      "kind": "open",
+      "source": "lusoponte-pvg",
+      "cents": [
+        340,
+        755,
+        1110,
+        1420
+      ],
+      "points": [
+        {
+          "lat": 38.720077,
+          "lon": -8.9586567
+        },
+        {
+          "lat": 38.7199471,
+          "lon": -8.9587184
+        },
+        {
+          "lat": 38.720282,
+          "lon": -8.9585502
+        }
+      ]
+    },
+    {
+      "id": "a25-aveiro",
+      "name": "A25 — Aveiro (sem portagem)",
+      "kind": "free",
+      "source": "ip-zero-2026",
+      "points": [
+        {
+          "lat": 40.6459214,
+          "lon": -8.6112243
+        },
+        {
+          "lat": 40.6460247,
+          "lon": -8.6116256
+        }
+      ]
+    },
+    {
+      "id": "a25-esgueira",
+      "name": "A25 — Esgueira (sem portagem)",
+      "kind": "free",
+      "source": "ip-zero-2026",
+      "points": [
+        {
+          "lat": 40.6845962,
+          "lon": -8.564948
+        },
+        {
+          "lat": 40.6849095,
+          "lon": -8.5648919
+        }
+      ]
+    },
+    {
+      "id": "a25-albergaria-oeste",
+      "name": "A25 — Albergaria oeste (sem portagem)",
+      "kind": "free",
+      "source": "ip-zero-2026",
+      "points": [
+        {
+          "lat": 40.6845373,
+          "lon": -8.537673
+        },
+        {
+          "lat": 40.6846609,
+          "lon": -8.5381285
+        }
+      ]
+    },
+    {
+      "id": "a24-vila-pouca",
+      "name": "A24 — Vila Pouca de Aguiar (sem portagem)",
+      "kind": "free",
+      "source": "ip-zero-2026",
+      "points": [
+        {
+          "lat": 41.5794121,
+          "lon": -7.6417252
+        },
+        {
+          "lat": 41.5797557,
+          "lon": -7.6417746
+        }
+      ]
+    },
+    {
+      "id": "0102",
+      "name": "A1 — Grijó Nó",
+      "kind": "open",
+      "source": "brisa-open-2026",
+      "cents": [
+        70,
+        125,
+        160,
+        180
+      ],
+      "points": [
+        {
+          "lat": 41.0168809,
+          "lon": -8.5808631
+        },
+        {
+          "lat": 41.0171942,
+          "lon": -8.5825431
+        },
+        {
+          "lat": 41.0171717,
+          "lon": -8.5824644
+        },
+        {
+          "lat": 41.0168912,
+          "lon": -8.580927
+        }
+      ]
+    },
+    {
+      "id": "0502",
+      "name": "A5 — Carcavelos plena via",
+      "kind": "open",
+      "source": "brisa-open-2026",
+      "cents": [
+        160,
+        310,
+        310,
+        310
+      ],
+      "points": [
+        {
+          "lat": 38.7078372,
+          "lon": -9.3345009
+        },
+        {
+          "lat": 38.7080889,
+          "lon": -9.3344929
+        },
+        {
+          "lat": 38.7080061,
+          "lon": -9.3344884
+        },
+        {
+          "lat": 38.7079108,
+          "lon": -9.334491
+        }
+      ]
+    },
+    {
+      "id": "0503",
+      "name": "A5 — Carcavelos I",
+      "kind": "open",
+      "source": "brisa-open-2026",
+      "cents": [
+        70,
+        135,
+        135,
+        135
+      ],
+      "points": [
+        {
+          "lat": 38.7075858,
+          "lon": -9.3344887
+        },
+        {
+          "lat": 38.7083104,
+          "lon": -9.3344857
+        },
+        {
+          "lat": 38.7082298,
+          "lon": -9.3344902
+        },
+        {
+          "lat": 38.7076706,
+          "lon": -9.3344875
+        }
+      ]
+    },
+    {
+      "id": "0504",
+      "name": "A5 — Carcavelos II",
+      "kind": "open",
+      "source": "brisa-open-2026",
+      "cents": [
+        90,
+        175,
+        175,
+        175
+      ],
+      "points": [
+        {
+          "lat": 38.7054495,
+          "lon": -9.3408332
+        },
+        {
+          "lat": 38.7054495,
+          "lon": -9.3406656
+        }
+      ]
+    },
+    {
+      "id": "0501",
+      "name": "A5 — Oeiras I / II",
+      "kind": "open",
+      "source": "brisa-open-2026",
+      "cents": [
+        40,
+        75,
+        75,
+        75
+      ],
+      "points": [
+        {
+          "lat": 38.7136212,
+          "lon": -9.2927364
+        },
+        {
+          "lat": 38.7116811,
+          "lon": -9.3018195
+        },
+        {
+          "lat": 38.711679,
+          "lon": -9.3016152
+        },
+        {
+          "lat": 38.7135393,
+          "lon": -9.2927544
+        },
+        {
+          "lat": 38.7116786,
+          "lon": -9.301764
+        },
+        {
+          "lat": 38.7116781,
+          "lon": -9.3017181
+        }
+      ]
+    },
+    {
+      "id": "0506",
+      "name": "A5 — Estoril",
+      "kind": "open",
+      "source": "brisa-open-2026",
+      "cents": [
+        50,
+        95,
+        95,
+        95
+      ],
+      "points": [
+        {
+          "lat": 38.7164315,
+          "lon": -9.3893561
+        },
+        {
+          "lat": 38.7162736,
+          "lon": -9.3895704
+        }
+      ]
+    },
+    {
+      "id": "a16-sacotes",
+      "name": "A16 — Sacotes / Telhal",
+      "kind": "open",
+      "source": "ascendi-traditional-2026",
+      "cents": [
+        65,
+        110,
+        145,
+        160
+      ],
+      "points": [
+        {
+          "lat": 38.8181151,
+          "lon": -9.3317333
+        },
+        {
+          "lat": 38.8179116,
+          "lon": -9.3316743
+        }
+      ]
+    },
+    {
+      "id": "a16-ranholas",
+      "name": "A16 — Ranholas / Linhó",
+      "kind": "open",
+      "source": "ascendi-traditional-2026",
+      "cents": [
+        120,
+        210,
+        270,
+        295
+      ],
+      "points": [
+        {
+          "lat": 38.778564,
+          "lon": -9.3641154
+        },
+        {
+          "lat": 38.7786576,
+          "lon": -9.3644471
+        }
+      ]
+    },
+    {
+      "id": "0901",
+      "name": "A9 — Queluz I",
+      "kind": "open",
+      "source": "brisa-open-2026",
+      "cents": [
+        35,
+        65,
+        85,
+        95
+      ],
+      "points": [
+        {
+          "lat": 38.7428695,
+          "lon": -9.2753376
+        },
+        {
+          "lat": 38.7428649,
+          "lon": -9.2765162
+        }
+      ]
+    },
+    {
+      "id": "1201",
+      "name": "A12 — Pinhal Novo I",
+      "kind": "open",
+      "source": "brisa-open-2026",
+      "cents": [
+        110,
+        195,
+        250,
+        275
+      ],
+      "points": [
+        {
+          "lat": 38.6619658,
+          "lon": -8.8947812
+        },
+        {
+          "lat": 38.6619761,
+          "lon": -8.8946294
+        }
+      ]
+    },
+    {
+      "id": "a19-sao-jorge",
+      "name": "A19 — São Jorge",
+      "kind": "open",
+      "source": "ip-calculator-a19-2026",
+      "exemptionSource": "lei-6-2026",
+      "cents": [
+        70,
+        120,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 39.6578161,
+          "lon": -8.8471165
+        },
+        {
+          "lat": 39.6578263,
+          "lon": -8.8469901
+        }
+      ]
+    },
+    {
+      "id": "a19-batalha",
+      "name": "A19 — Batalha",
+      "kind": "open",
+      "source": "ip-calculator-a19-2026",
+      "exemptionSource": "lei-6-2026",
+      "cents": [
+        75,
+        130,
+        0,
+        0
+      ],
+      "points": [
+        {
+          "lat": 39.6913433,
+          "lon": -8.8475793
+        },
+        {
+          "lat": 39.6913383,
+          "lon": -8.8474632
+        }
+      ]
+    },
+    {
+      "id": "a8-leiria-sul",
+      "name": "A8 / IC36 — Leiria Sul",
+      "kind": "closed",
+      "source": "ip-calculator-a8-ic36-2026",
+      "exemptionSource": "lei-6-2026",
+      "pricingNote": "Joint price for crossing both corridor points, not a standalone charge at each gantry. A partial crossing remains unavailable.",
+      "points": [
+        {
+          "lat": 39.7239999,
+          "lon": -8.8164698
+        },
+        {
+          "lat": 39.7239279,
+          "lon": -8.8165437
+        }
+      ]
+    },
+    {
+      "id": "a8-pousos",
+      "name": "A8 / IC36 — Pousos",
+      "kind": "closed",
+      "source": "ip-calculator-a8-ic36-2026",
+      "exemptionSource": "lei-6-2026",
+      "pricingNote": "Joint price for crossing both corridor points, not a standalone charge at each gantry. A partial crossing remains unavailable.",
+      "points": [
+        {
+          "lat": 39.7275477,
+          "lon": -8.7830362
+        },
+        {
+          "lat": 39.7276331,
+          "lon": -8.7830778
+        }
+      ]
+    },
+    {
+      "id": "a32-olival",
+      "name": "A32 — Olival / A1",
+      "kind": "open",
+      "source": "imt-a32-olival-2026",
+      "cents": [
+        60,
+        110,
+        140,
+        155
+      ],
+      "points": [
+        {
+          "lat": 41.0575469,
+          "lon": -8.5258759
+        },
+        {
+          "lat": 41.0575787,
+          "lon": -8.525826
+        },
+        {
+          "lat": 41.057612,
+          "lon": -8.5257809
+        },
+        {
+          "lat": 41.0576882,
+          "lon": -8.5256721
+        },
+        {
+          "lat": 41.0577237,
+          "lon": -8.5256201
+        },
+        {
+          "lat": 41.0577589,
+          "lon": -8.5255763
+        }
+      ]
+    },
+    {
+      "id": "a11-celeiros",
+      "name": "A11 — Celeirós",
+      "kind": "open",
+      "source": "ascendi-traditional-2026",
+      "cents": [
+        40,
+        70,
+        90,
+        100
+      ],
+      "points": [
+        {
+          "lat": 41.503384,
+          "lon": -8.4408588
+        },
+        {
+          "lat": 41.5031218,
+          "lon": -8.4411535
+        },
+        {
+          "lat": 41.503267,
+          "lon": -8.4409923
+        },
+        {
+          "lat": 41.5030371,
+          "lon": -8.4412357
+        },
+        {
+          "lat": 41.5030755,
+          "lon": -8.4412041
+        },
+        {
+          "lat": 41.503174,
+          "lon": -8.4410955
+        },
+        {
+          "lat": 41.5033126,
+          "lon": -8.4409252
+        },
+        {
+          "lat": 41.5032061,
+          "lon": -8.4410539
+        }
+      ]
+    },
+    {
+      "id": "a33-queimada",
+      "name": "A33 — Queimada",
+      "kind": "open",
+      "source": "ip-calculator-a33-2026",
+      "cents": [
+        75,
+        135,
+        175,
+        190
+      ],
+      "points": [
+        {
+          "lat": 38.6207456,
+          "lon": -9.1823038
+        },
+        {
+          "lat": 38.6206629,
+          "lon": -9.1824077
+        }
+      ]
+    },
+    {
+      "id": "a33-laranjeiras",
+      "name": "A33 — Laranjeiras",
+      "kind": "open",
+      "source": "ip-calculator-a33-2026",
+      "cents": [
+        85,
+        150,
+        195,
+        215
+      ],
+      "points": [
+        {
+          "lat": 38.6027397,
+          "lon": -9.1207089
+        },
+        {
+          "lat": 38.6028574,
+          "lon": -9.1207173
+        }
+      ]
+    },
+    {
+      "id": "a33-coina",
+      "name": "A33 — Coina / Penalva",
+      "kind": "open",
+      "source": "ip-calculator-a33-coina-2026",
+      "cents": [
+        35,
+        65,
+        85,
+        90
+      ],
+      "points": [
+        {
+          "lat": 38.5986997,
+          "lon": -9.0402453
+        },
+        {
+          "lat": 38.5985693,
+          "lon": -9.0402164
+        }
+      ]
+    },
+    {
+      "id": "a16-idanha",
+      "name": "A16 — Idanha (acessos locais)",
+      "kind": "open",
+      "source": "ascendi-traditional-2026",
+      "exactOnly": true,
+      "cents": [
+        65,
+        115,
+        150,
+        165
+      ],
+      "points": [
+        {
+          "lat": 38.7708725,
+          "lon": -9.275194
+        },
+        {
+          "lat": 38.7715705,
+          "lon": -9.2748074
+        }
+      ]
+    }
+  ],
+  "rates": {
+    "a8-leiria-sul>a8-pousos": {
+      "cents": [
+        65,
+        110,
+        0,
+        0
+      ],
+      "source": "ip-calculator-a8-ic36-2026"
+    },
+    "a8-pousos>a8-leiria-sul": {
+      "cents": [
+        65,
+        110,
+        0,
+        0
+      ],
+      "source": "ip-calculator-a8-ic36-2026"
+    }
+  }
+}

@@ -54,28 +54,29 @@ Requests are user-triggered, cached per directed pair/preference in memory, batc
 
 The driver supplies consumption (L/100 km), fuel price (EUR/L), and toll class. No vehicle figures or current fuel prices are assumed. Fuel litres = route kilometres × consumption / 100. Fuel cost = litres × price.
 
-Automatic toll **estimates** now use the bundled `toll-data.json` catalogue. It currently covers **48 reviewed toll locations and 738 directed four-class fares**, principally in the Brisa northern/central networks and Brisal A17. This is **not nationwide coverage**: southern networks, bridges, unmatched plazas, and several electronic-toll systems are not yet priced. The tariff source is the official Brisa/Brisal PDF effective **26 August 2026** (VAT included). The PDF's 2025 southern pages and ambiguous extracted cells are excluded. Lost-ticket/maximum-charge diagonal cells are never used as ordinary fares. Standard classes 1–4 are supported; personal discounts and special exemptions are not inferred.
+Automatic toll **estimates** use the bundled `toll-data.json` catalogue: **203 tariff locations and 5,624 directed four-class fares**, plus fixed electronic/open-barrier prices. The November 2026 audit corrected 26 damaged imported fare rows, separated shared-plaza lanes, added southern Brisa tariffs, A7/A14/A21 and Douro Litoral section prices, A8/A15 matrices, electronic tolls and the Lisbon bridges. Each fare has source provenance; reverse-derived fares are identified separately. See [TOLL-AUDIT.md](TOLL-AUDIT.md) for evidence, coverage and unresolved gaps. This remains **an expanded catalogue, not certified nationwide completeness**. Figueiredo on A11, Grândola/A26, some internal A11 combinations and partial closed-system journeys still need verification. The source-specific 2026 dates are recorded in the data. Standard classes 1–4 include verified A41/A19/Leiria–Pousos class 3/4 exemptions; personal, resident and subscription discounts are not inferred.
 
 After a route is ready, a background Valhalla `trace_attributes` POST inspects its exact encoded geometry using `edge_walk`. Crossing coordinates match reviewed plaza locations derived from OpenStreetMap/Geofabrik (ODbL). Closed-system entry/exit pairs use directed table fares; the estimate does not assume a return follows the same route. Trace requests share the routing queue and 1.1-second rate limit. Geometry results are cached in memory, and stale requests cannot update a replaced or cleared trip. Changing the vehicle class selects another tariff locally without another request.
 
 The always-visible cost card has a class selector and a per-leg breakdown. A whole-trip toll amount and combined fuel total appear only when **every leg has a verified price** (or the driver explicitly enters a manual trip amount). A route reported entirely without tolls shows €0. Unknown crossings, missing entry/exit pairs, ambiguous plazas, missing fares, failed traces, or a leg beginning/ending inside a closed toll system remain unavailable; no partial sum is presented as a complete total. Adjacent lane nodes are deduplicated, while later visits remain separate. Every mapped crossing is inspected, including exit plazas on approach lanes tagged toll=false. Former gantries are skipped only when explicitly verified as free in the local catalogue. This includes the former A25 Albergaria gantry, abolished in 2026; it must not become an A1 entry/exit. IC24 Sul (the CREP/A1 connector) is priced separately from Grijó PV. The former “Sobre esta estimativa” section remains removed.
 
-The official government's public price endpoint is not used: an external-origin test returned zero for the identical geometry that its own site priced at €3.90. No paid API, secret, account, proxy, or backend is required by the static catalogue approach. Existing public routing-service availability limits still apply.
+The government's calculator is used for **manual source checks**, not runtime pricing. Direct service calls were inconsistent (zero/error responses), and a route ending inside an A33 section returned zero while the full section correctly returned €0.35. Its A19/IC36 higher-class results also needed correction against the current exemption law. No paid API, secret, account, proxy, or backend is required by the static catalogue. Existing public routing-service availability limits still apply.
 
 ### Updating static toll data
 
 Optional build-time Python dependencies: `pdfplumber` and `osmium`. Drivers and site builds do not require them. Download the official source PDF and the free Portugal PBF extract from the URLs in `toll-data.json`; keep these large source files outside Git. Then run:
 
 ```sh
-python tools/import-toll-tables.py source.pdf rates.json
+python tools/import-toll-tables.py brisa-august-2026.pdf rates.json brisa-march-2026.pdf
+python tools/import-atlantico-tables.py atlantico-2026.pdf atlantico.json
 python tools/extract-toll-nodes.py portugal.osm.pbf nodes.json
-node tools/build-toll-catalog.mjs rates.json nodes.json
+node tools/build-toll-catalog.mjs rates.json nodes.json atlantico.json
 npm test
 npm run test:tolls
 npm run build
 ```
 
-The importer is specific to the reviewed 2026 PDF layout; it requires review when the source layout or rates change. Review station IDs, entry/exit direction and lane locations in `tools/toll-stations.json` before adding coverage. Update effective/source/verification dates in the catalogue builder when replacing tariffs. The published data includes OpenStreetMap attribution and the ODbL license reference. `npm run test:tolls` checks live road access, outbound/return fares, and their sum against the production catalogue.
+The importers are specific to the reviewed 2026 layouts and must be reviewed if those change. Whole currency tokens are parsed before column matching so rotated headings cannot clip leading digits. The August PDF's stale southern 2025 heading is rejected; southern prices come from the March revision with a 2026 heading. Source PDF SHA-256 hashes are retained. Review station IDs, lane membership and direction in `tools/toll-stations.json`, fixed barriers and source evidence in `tools/toll-supplement.json`, and reviewed section graphs in `tools/toll-section-tables.json`. Section graphs must be trees and agree with overlapping published matrix cells. Update source/verification dates when replacing tariffs. OSM attribution and ODbL references remain in the catalogue. `npm run audit:tolls` checks every data record and reference journeys offline. `npm run audit:tolls:live` checks a wider set of actual motorway routes and writes local evidence to ignored `artifacts/toll-feasibility/live-audit.json`; it is separate from ordinary tests and obeys the public routing request interval. `npm run test:tolls` retains the original access/outbound/return regressions.
 
 ## Limits and privacy
 

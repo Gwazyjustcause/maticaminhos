@@ -13,7 +13,16 @@ const nonTolledExit=trace([station('0119'),station('0117')]);nonTolledExit.edges
 assert.deepEqual(priceTollTrace(nonTolledExit,catalog).cents,catalog.rates['0119>0117'],'An exit remains a toll crossing even if its approach lane is tagged toll=false.');
 const freeGantry=station('a25-albergaria');
 assert.deepEqual(priceTollTrace(trace([freeGantry,station('0114'),station('0119')]),catalog).cents,catalog.rates['0114>0119'],'The abolished A25 gantry does not shift A1 entry/exit pairing.');
-assert.deepEqual(priceTollTrace(trace([freeGantry]),catalog).cents,[0,0,0,0]);
+const freeTrace=trace([freeGantry]);freeTrace.edges[0].names=['A 25'];
+assert.deepEqual(priceTollTrace(freeTrace,catalog).cents,[0,0,0,0]);
+assert.equal(priceTollTrace(trace([freeGantry]),catalog).complete,false,'One free gantry cannot establish that other toll-tagged sections are free.');
+const sharedRef=trace([freeGantry]);sharedRef.edges[0].names=['A25','A1'];
+assert.equal(priceTollTrace(sharedRef,catalog).complete,false,'A free road reference must not override a shared payable motorway reference.');
+const freeAndUnknown=trace([freeGantry,{lat:40.6,lon:-8.4}],[0]);freeAndUnknown.edges[0].names=['A25'];freeAndUnknown.edges[1].names=['A1'];
+assert.equal(priceTollTrace(freeAndUnknown,catalog).complete,false,'Do not hide an unpriced paid road behind an abolished gantry.');
+const freeWithPaidGates=trace([station('0137'),freeGantry,station('0121')]);
+freeWithPaidGates.edges.forEach((e,i)=>{e.toll=i===1;e.names=[i===1?'A25':'A1'];});
+assert.deepEqual(priceTollTrace(freeWithPaidGates,catalog).cents,outbound.cents,'Abolished-road tags cannot override known payable plazas on toll=false approach lanes.');
 assert.deepEqual(outbound.cents,[390,680,875,970]);
 assert.deepEqual(inbound.cents,[515,900,1160,1285]);
 const total=totalTollPrices([outbound,inbound,{complete:true,cents:[0,0,0,0]}]);
@@ -26,6 +35,18 @@ assert.equal(priceTollTrace(trace([station('0137'),{lat:40.4,lon:-8},station('01
 const near={...station('0137'),lat:station('0137').lat+0.00001};
 assert.deepEqual(priceTollTrace(trace([station('0137'),near,station('0121')]),catalog).cents,outbound.cents,'Adjacent lane nodes count once.');
 assert.equal(identifyTollStation(station('0137'),[{id:'a',points:[station('0137')]},{id:'b',points:[station('0137')]}]),null,'Ambiguous plazas are not guessed.');
+assert.deepEqual(priceTollTrace(trace([station('0102')]),catalog).cents,[70,125,160,180],'Grijó slip roads have a fixed fee; they are not a closed-system entry.');
+assert.deepEqual(priceTollTrace(trace([station('0502')]),catalog).cents,[160,310,310,310]);
+assert.deepEqual(priceTollTrace(trace([station('0503')]),catalog).cents,[70,135,135,135],'The adjacent Carcavelos slip road has a different tariff.');
+assert.notEqual(identifyTollStation(station('0414'),catalog.stations).id,identifyTollStation(station('4122'),catalog.stations).id,'A4 Campo and A41 ZIC are separate plazas.');
+assert.equal(priceTollTrace(trace([station('0911'),station('0912')]),catalog).complete,false,'Exclude off-diagonal maximum/lost-ticket fares at mutually exclusive accesses too.');
+assert.deepEqual(priceTollTrace(trace([station('a19-sao-jorge'),station('a19-batalha')]),catalog).cents,[145,250,0,0]);
+assert.deepEqual(priceTollTrace(trace([station('a8-leiria-sul'),station('a8-pousos')]),catalog).cents,[65,110,0,0],'The jointly verified IC36 corridor total is not charged twice.');
+assert.equal(priceTollTrace(trace([station('a8-leiria-sul')]),catalog).complete,false,'A joint corridor price does not establish a standalone gantry tariff.');
+assert.deepEqual(priceTollTrace(trace([station('0710'),station('0716')]),catalog).cents,[385,685,870,970]);
+assert.deepEqual(priceTollTrace(trace([station('a33-queimada'),station('a33-laranjeiras'),station('a33-coina')]),catalog).cents,[195,350,455,495]);
+assert.equal(identifyTollStation({lat:38.7708725,lon:-9.275194},catalog.stations).id,'a16-idanha','The local A16 slip road must not inherit a nearby main-lane ticket tariff.');
+assert.deepEqual(priceTollTrace(trace([station('a16-idanha')]),catalog).cents,[65,115,150,165]);
 assert.equal(priceTollTrace({edges:[],shape:''},catalog).complete,false);
 assert.equal(priceTollTrace({shape:encode([station('0137')]),edges:[{toll:false,end_shape_index:0,end_node:{type:'toll_gantry'}}]},catalog).complete,false,'An old gantry alone is not proof of a payable fare.');
 for(const [key,prices] of Object.entries(catalog.rates)){assert.notEqual(...key.split('>'));assert.equal(prices.length,4);assert.ok(prices.every(c=>Number.isSafeInteger(c)&&c>=0));}

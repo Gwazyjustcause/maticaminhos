@@ -1,6 +1,6 @@
 import {optimizeOrder} from './optimizer.mjs?v=6';
 import {fuelEstimate,totalEstimate,confirmedToll,tollForLegs} from './costs.mjs?v=11';
-import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=13';
+import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=15';
 import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=12';
 import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs?v=6';
 
@@ -305,7 +305,7 @@ function routingRequest(endpoint,payload){
 async function updateTollPrices(target){
   target.tollPricing={status:'loading'};renderSummary();
   try{
-    tollCatalogPromise??=requestJSON('toll-data.json?v=13').catch(error=>{tollCatalogPromise=null;throw error;});
+    tollCatalogPromise??=requestJSON('toll-data.json?v=15').catch(error=>{tollCatalogPromise=null;throw error;});
     const catalog=await tollCatalogPromise;if(route!==target)return;
     const legs=[];
     for(const leg of target.legs){

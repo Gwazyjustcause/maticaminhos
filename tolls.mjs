@@ -1,11 +1,15 @@
 import {decodePolyline6,distanceMetres} from './routing.mjs?v=12';
 
 export function tollTracePayload(leg){
-  return {encoded_polyline:leg.encodedShape,shape_match:'edge_walk',costing:'auto',filters:{action:'include',attributes:['edge.toll','edge.end_shape_index','edge.begin_shape_index','node.type','shape']}};
+  return {encoded_polyline:leg.encodedShape,shape_match:'edge_walk',costing:'auto',filters:{action:'include',attributes:['edge.toll','edge.names','edge.end_shape_index','edge.begin_shape_index','node.type','shape']}};
 }
 export function identifyTollStation(point,stations){
-  const matches=stations.map(station=>({station,distance:Math.min(...station.points.map(p=>distanceMetres(point,p)))})).filter(m=>m.distance<=80).sort((a,b)=>a.distance-b.distance);
-  if(!matches.length||matches[1]&&matches[1].distance-matches[0].distance<20)return null;
+  const matches=stations.map(station=>({station,distance:Math.min(...station.points.map(p=>distanceMetres(point,p)))})).filter(m=>m.distance<=(m.station.exactOnly?3:80)).sort((a,b)=>a.distance-b.distance);
+  if(!matches.length)return null;
+  // Exact OSM lane-node matches distinguish adjacent plazas with different
+  // tariffs (e.g. the main Carcavelos barrier and its cheaper slip roads).
+  if(matches[0].distance<=3&&(!matches[1]||matches[1].distance>3))return matches[0].station;
+  if(matches[1]&&matches[1].distance-matches[0].distance<20)return null;
   return matches[0].station;
 }
 const zero=()=>[0,0,0,0];
@@ -13,9 +17,20 @@ export function priceTollTrace(trace,catalog){
   const unavailable=reason=>({complete:false,cents:null,reason,charges:[]});
   if(!Array.isArray(trace?.edges)||!trace.edges.length)return unavailable('Não foi possível identificar as portagens deste trajeto.');
   let shape;try{shape=decodePolyline6(trace.shape);}catch{return unavailable('Traçado de portagens indisponível.');}
+  const tolledEdges=trace.edges.filter(edge=>edge.toll===true);
+  const freeRefs=new Set(catalog.freeRoadRefs||[]);
+  const namedFree=edge=>{
+    const refs=(Array.isArray(edge.names)?edge.names:[]).flatMap(name=>String(name).toUpperCase().match(/\bA\s*\d+\b/g)||[]).map(ref=>ref.replace(/\s/g,''));
+    return refs.length>0&&refs.every(ref=>freeRefs.has(ref));
+  };
   // Exit plazas may sit on non-tolled approach lanes: inspect every crossing.
   // Obsolete gantries are skipped only when the local catalogue verifies them free.
   const gates=trace.edges.filter(edge=>/^toll_(booth|gantry)$/.test(edge.end_node?.type));
+  if(tolledEdges.length&&tolledEdges.every(namedFree)&&gates.every(gate=>{
+    const coordinate=shape[gate.end_shape_index];if(!coordinate)return false;
+    const station=identifyTollStation({lat:coordinate[1],lon:coordinate[0]},catalog.stations);
+    return station?station.kind==='free':namedFree(gate);
+  }))return {complete:true,cents:zero(),charges:[],reason:''};
   if(!gates.length)return unavailable('Há um troço com portagens sem preço identificado.');
   const cents=zero(),charges=[];let entry=null,previous=null;
   for(const gate of gates){
@@ -42,6 +57,7 @@ export function priceTollTrace(trace,catalog){
     }
   }
   if(entry)return unavailable('Não foi possível confirmar a entrada e a saída da autoestrada neste trajeto.');
+  if(!charges.length)return unavailable('Não foi possível confirmar todos os troços deste trajeto.');
   for(const charge of charges)for(let i=0;i<4;i++){
     const value=charge.cents[i];if(!Number.isSafeInteger(value)||value<0)return unavailable('Tarifa inválida.');cents[i]+=value;
   }
