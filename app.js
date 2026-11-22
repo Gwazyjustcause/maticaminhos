@@ -62,12 +62,12 @@ $('theme-button').onclick=()=>{state.theme=state.theme==='dark'?'light':'dark';a
 applyTheme();
 function initializeMap(){
   if(!window.L){$('map').innerHTML='<p style="padding:70px 20px">O mapa não carregou. Atualize a página para tentar novamente. Pode continuar a pesquisar locais.</p>';return;}
-  map=L.map('map',{scrollWheelZoom:true,zoomControl:false,maxZoom:21}).setView([state.depot.lat,state.depot.lon],11);
+  map=L.map('map',{scrollWheelZoom:true,doubleClickZoom:false,zoomControl:false,maxZoom:21}).setView([state.depot.lat,state.depot.lon],11);
   L.control.zoom({position:'topleft'}).addTo(map);
   streetTiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxNativeZoom:19,maxZoom:21,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'});
   setMapStyle(state.mapStyle,false);
   markers=L.layerGroup().addTo(map);routeLines=L.layerGroup().addTo(map);
-  map.on('click',event=>{
+  map.on('dblclick',event=>{
     if(busy)return;
     if(pending){pending.lat=event.latlng.lat;pending.lon=event.latlng.lng;pending.approximate=false;pendingMarker?.setLatLng(event.latlng);$('picker-help').textContent=pending.accessOnly?'Pin ajustado. Confirme o acesso de viatura.':'Pin ajustado. Confirme o nome e adicione a paragem.';}
     else beginPicker({name:'',address:`${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`,lat:event.latlng.lat,lon:event.latlng.lng});
@@ -166,7 +166,7 @@ function beginAccessPicker(index){
   $('picker-title').textContent='Entrada de viatura';$('picker-help').textContent='Mova o pin para a estrada ou entrada de cargas. O local mantém a sua posição.';$('confirm-place').textContent='Usar acesso';
 }
 $('cancel-picker').onclick=cancelPicker;
-$('pick-map').onclick=()=>{if(!map)return notify('O mapa não está disponível. Atualize a página.');notify('Toque no mapa na entrada de entrega. Depois dê um nome ao local.');closeResults();};
+$('pick-map').onclick=()=>{if(!map)return notify('O mapa não está disponível. Atualize a página.');notify('Faça duplo clique (ou toque duas vezes) na entrada de entrega. Depois dê um nome ao local.');closeResults();};
 $('picker-heart').onclick=()=>{pendingFavorite=!pendingFavorite;$('picker-heart').textContent=pendingFavorite?'♥':'♡';$('picker-heart').setAttribute('aria-pressed',String(pendingFavorite));};
 $('confirm-place').onclick=()=>{
   if(!pending||busy)return;
