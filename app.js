@@ -1,6 +1,6 @@
 import {optimizeOrder} from './optimizer.mjs';
 import {fuelEstimate,totalEstimate,confirmedToll} from './costs.mjs';
-import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,arrivalTime,moveStop,normalizeQuery,costing,matrixBatches} from './routing.mjs';
+import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches} from './routing.mjs';
 
 const $=id=>document.getElementById(id);
 const escapeHTML=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -11,8 +11,7 @@ const defaultDepot={name:'Matisilva — Carnes Lda',address:'Zona Industrial · 
 const validPlace=p=>p&&typeof p.name==='string'&&typeof p.address==='string'&&Number.isFinite(p.lat)&&Math.abs(p.lat)<=90&&Number.isFinite(p.lon)&&Math.abs(p.lon)<=180;
 const positive=value=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
 const modeValue=value=>value==='avoid'?'avoid':'allow';
-const now=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Lisbon',hourCycle:'h23'}).format(new Date());
-let state={depot:defaultDepot,stops:[],saved:[],roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{},departure:now};
+let state={depot:defaultDepot,stops:[],saved:[],roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{}};
 try{
   const data=JSON.parse(localStorage.getItem('maticaminhos-v1'));
   if(data)state={
@@ -21,8 +20,7 @@ try{
     saved:Array.isArray(data.saved)?data.saved.filter(validPlace).slice(0,500):[],
     roundtrip:data.roundtrip!==false,service:Number.isFinite(data.service)?Math.max(0,Math.min(120,data.service)):10,
     consumption:positive(data.consumption),fuelPrice:positive(data.fuelPrice),tollClass:/^[1-4]$/.test(data.tollClass)?String(data.tollClass):'',
-    mode:modeValue(data.mode),overrides:Object.fromEntries(Object.entries(data.overrides||{}).filter(([,v])=>v==='allow'||v==='avoid')),
-    departure:/^\d{2}:\d{2}$/.test(data.departure)?data.departure:now
+    mode:modeValue(data.mode),overrides:Object.fromEntries(Object.entries(data.overrides||{}).filter(([,v])=>v==='allow'||v==='avoid'))
   };
 }catch{}
 let route=null,busy=false,searching=false,changingDepot=false,pending=null,pendingMarker=null,pendingFavorite=false,toastTimer,calculateTimer,results=[],showingFavorites=false,draggedIndex=null;
@@ -148,7 +146,6 @@ function renderSummary(){
   $('total-time').textContent=route?duration(route.duration):'—';
   $('time-breakdown').textContent=route?`${duration(route.driving)} a conduzir + ${duration(route.delivery)} nas entregas`:busy?'A calcular o percurso…':state.stops.length?'Calcule para ver a duração completa.':'Adicione os locais para começar.';
   $('total-distance').textContent=route?decimal(route.distance/1000):'—';
-  $('arrival-time').textContent=route?arrivalTime(state.departure,route.duration):'—';
   $('map-status').textContent=busy?'A calcular os percursos…':route?`${decimal(route.distance/1000)} km · ${duration(route.duration)} no total`:state.stops.length?`${state.stops.length} ${state.stops.length===1?'paragem':'paragens'} no mapa`:'Partida da Matisilva';
   const fuel=route?fuelEstimate(route.distance,state.consumption,state.fuelPrice):null;
   $('fuel-cost').textContent=fuel?money(fuel.cost):'Preencher veículo';$('fuel-preview').textContent=fuel?money(fuel.cost)+' combustível':'—';
@@ -289,9 +286,6 @@ function renderNavigation(){
   if(leg){$('navigate').href=navigationURL(leg);$('delivered').textContent=route.completed>=state.stops.length?'Cheguei à empresa':'Entregue · Próxima';}
 }
 $('delivered').onclick=()=>{if(route){route.completed++;render();}};
-$('departure-time').value=state.departure;
-$('departure-time').oninput=()=>{state.departure=$('departure-time').value;persist();renderSummary();};
-$('departure-time').onchange=$('departure-time').oninput;
 $('roundtrip').checked=state.roundtrip;
 $('roundtrip').onchange=()=>{state.roundtrip=$('roundtrip').checked;planChanged();};
 $('service').value=state.service;

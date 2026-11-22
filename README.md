@@ -18,7 +18,7 @@ Adding a stop does **not** add it to favourites. A heart explicitly toggles favo
 
 **Calcular rota** preserves the displayed order. Move stops with Subir/Descer on any device, or drag a stop on desktop. Clicking a stop name lets the driver rename it or move its entrance. **Otimizar ordem** explicitly suggests an order from driving-time matrices and a heuristic solver. It does not guarantee the global optimum. After calculating a route, changes to order, stop locations, return, or toll preferences recalculate its durations and map geometry. Delivery time updates the total without another routing request.
 
-Whole-trip time includes all driving legs, service time at every delivery, and return to the depot if selected. A departure time supplies an estimated finish time, including next-day rollover. Google Maps navigation opens the next directed leg with its toll preference; it may choose different roads and change the estimate.
+Whole-trip duration includes all driving legs, service time at every delivery, and return to the depot if selected. The interface focuses on route planning and does not ask for a date or departure time. Google Maps navigation opens the next directed leg with its toll preference; it may choose different roads and change the estimate.
 
 ## Tolls and routing
 
