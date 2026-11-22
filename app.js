@@ -1,6 +1,7 @@
 import {optimizeOrder} from './optimizer.mjs?v=6';
 import {fuelEstimate,totalEstimate,confirmedToll,tollForLegs} from './costs.mjs?v=11';
-import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=9';
+import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=12';
+import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=12';
 import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs?v=6';
 
 const $=id=>document.getElementById(id);
@@ -32,6 +33,8 @@ let route=null,busy=false,searching=false,changingDepot=false,pending=null,pendi
 let map,markers,routeLines;
 const legCache=new Map();
 const roadCache=new Map();
+const tollTraceCache=new Map();
+let tollCatalogPromise;
 let accessIssue=null;
 let clearedPlan=null;
 const roadFor=p=>roadCache.get(accessKey(p));
@@ -170,6 +173,7 @@ $('undo-clear').onclick=()=>{
   $('toll-amount').value=route?.toll??'';
   $('route-message').textContent='Rota restaurada.';
   render();drawMap(true);persist();notify('Rota restaurada.');
+  if(route&&(!route.tollPricing||route.tollPricing.status==='loading'))void updateTollPrices(route);
 };
 $('change-depot').onclick=()=>{
   if(busy)return;
@@ -214,12 +218,19 @@ function renderSummary(){
   $('map-status').textContent=busy?'A calcular os percursos…':route?`${decimal(route.distance/1000)} km · ${duration(route.duration)} no total`:state.stops.length?`${state.stops.length} ${state.stops.length===1?'paragem':'paragens'} no mapa`:'Partida da Matisilva';
   const fuel=route?fuelEstimate(route.distance,state.consumption,state.fuelPrice):null;
   $('fuel-cost').textContent=fuel?money(fuel.cost):'Preencher veículo';$('fuel-preview').textContent=fuel?money(fuel.cost)+' combustível':'—';
-  const toll=route?tollForLegs(route.legs,route.toll):null;
+  const pricing=route?.tollPricing;
+  const automatic=selectedTollPrice(pricing,state.tollClass);
+  const toll=route?tollForLegs(route.legs,route.toll??automatic):null;
   const tollFree=!!route&&route.legs.length>0&&route.legs.every(leg=>leg.hasToll===false);
-  $('toll-cost').textContent=toll!==null?money(toll):route?'Preço por confirmar':'Calcule a rota';
-  $('toll-status').textContent=!route?'Calcule a rota para ver os custos.':tollFree?'O percurso calculado não inclui portagens.':route.toll!==null?'Valor de portagens indicado por si para esta viagem.':`${state.tollClass?'Classe '+state.tollClass+' · ':''}Este percurso tem portagens. Consulte o preço oficial e indique o total abaixo.`;
+  $('toll-cost').textContent=toll!==null?money(toll):!route?'Calcule a rota':!state.tollClass?'Escolha a classe':pricing?.status==='loading'?'A calcular…':'Tarifa não coberta';
+  $('toll-status').textContent=!route?'Calcule a rota para ver os custos.':tollFree?'O percurso calculado não inclui portagens.':route.toll!==null?'Valor de portagens indicado por si para esta viagem.':pricing?.status==='loading'?'A identificar as portagens do percurso…':pricing?.complete?`${state.tollClass?'Classe '+state.tollClass+' · ': 'Escolha a classe da viatura. '}Tabela estática de ${pricing.effectiveFrom}. Sem descontos pessoais.`:pricing?.status==='error'?'Não foi possível consultar as portagens. Tente novamente.':`${pricing?.missing||1} trajeto(s) com tarifa ainda não coberta. Indique o valor se o souber.`;
+  $('trip-toll-class').value=state.tollClass;
+  $('trip-toll-class-label').hidden=tollFree;
   $('toll-amount').disabled=busy||!route||tollFree;
-  $('toll-entry').hidden=tollFree;
+  $('manual-toll').hidden=tollFree||!route;
+  $('retry-tolls').hidden=!route||pricing?.status!=='error';
+  $('toll-breakdown').hidden=!pricing?.legs||!state.tollClass||tollFree;
+  $('toll-breakdown-list').innerHTML=(pricing?.legs||[]).map((price,i)=>`<div class="cost-line"><span>${escapeHTML(route.legs[i].from.name)} → ${escapeHTML(route.legs[i].to.name)}</span><strong>${price.complete?money(price.cents[Number(state.tollClass)-1]/100):'Não coberto'}</strong></div>`).join('');
   const total=totalEstimate(fuel?.cost??null,toll);$('total-cost').textContent=total!==null?money(total):'—';
 }
 $('stop-list').onclick=event=>{
@@ -249,13 +260,38 @@ async function requestJSON(url,options={}){
   if(!response.ok)throw new Error(data.error||'Serviço indisponível. Tente novamente dentro de alguns minutos.');
   return data;
 }
-let lastRoutingRequest=0;
-async function routingRequest(endpoint,payload){
-  const wait=Math.max(0,1100-(Date.now()-lastRoutingRequest));
-  if(wait)await new Promise(resolve=>setTimeout(resolve,wait));
-  lastRoutingRequest=Date.now();
-  return requestJSON('https://valhalla1.openstreetmap.de/'+endpoint+'?json='+encodeURIComponent(JSON.stringify(payload)),{headers:{'X-Client-Id':'gwazyjustcause.github.io/maticaminhos'}});
+let lastRoutingRequest=0,routingQueue=Promise.resolve();
+function routingRequest(endpoint,payload){
+  const run=async()=>{
+    const wait=Math.max(0,1100-(Date.now()-lastRoutingRequest));
+    if(wait)await new Promise(resolve=>setTimeout(resolve,wait));
+    lastRoutingRequest=Date.now();
+    const headers={'X-Client-Id':'gwazyjustcause.github.io/maticaminhos'};
+    if(endpoint==='trace_attributes')return requestJSON('https://valhalla1.openstreetmap.de/'+endpoint,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    return requestJSON('https://valhalla1.openstreetmap.de/'+endpoint+'?json='+encodeURIComponent(JSON.stringify(payload)),{headers});
+  };
+  const result=routingQueue.then(run);routingQueue=result.catch(()=>{});return result;
 }
+async function updateTollPrices(target){
+  target.tollPricing={status:'loading'};renderSummary();
+  try{
+    tollCatalogPromise??=requestJSON('toll-data.json?v=12').catch(error=>{tollCatalogPromise=null;throw error;});
+    const catalog=await tollCatalogPromise;if(route!==target)return;
+    const legs=[];
+    for(const leg of target.legs){
+      if(route!==target)return;
+      if(leg.hasToll===false){legs.push({complete:true,cents:[0,0,0,0],charges:[]});continue;}
+      let price=tollTraceCache.get(leg.encodedShape);
+      if(!price){price=priceTollTrace(await routingRequest('trace_attributes',tollTracePayload(leg)),catalog);tollTraceCache.set(leg.encodedShape,price);}
+      legs.push(price);
+    }
+    if(route!==target)return;
+    target.tollPricing={...totalTollPrices(legs),legs,status:'ready',effectiveFrom:catalog.effectiveFrom};renderSummary();
+  }catch{
+    if(route!==target)return;target.tollPricing={status:'error'};renderSummary();
+  }
+}
+$('retry-tolls').onclick=()=>{if(route)updateTollPrices(route);};
 async function prepareRoadPoints(points){
   const missing=points.filter(p=>!roadCache.has(accessKey(p)));
   for(let start=0;start<missing.length;start+=8){
@@ -328,7 +364,7 @@ async function calculate(reorder){
     const orderedLegs=legs.map(leg=>computed.get(leg.index));
     state.stops=stops.map(({road,...place})=>place);route={...totalTrip(orderedLegs,stops.length,state.service),legs:orderedLegs,completed:0,toll:null};
     $('route-message').textContent=reorder?'Ordem sugerida pelos tempos de condução. Pode ajustar as paragens e cada trajeto.':'Rota calculada na ordem apresentada. As alterações recalculam o tempo total.';
-    render();drawMap(true);persist();
+    render();drawMap(true);persist();void updateTollPrices(route);
   }catch(error){if(error.place){accessIssue=pointKey(error.place);map?.flyTo([error.place.lat,error.place.lon],16);}$('route-message').textContent=error.name==='TimeoutError'?'O serviço demorou demasiado. Tente calcular novamente.':error.message;notify($('route-message').textContent);}
   finally{setBusy(false);}
 }
@@ -444,8 +480,10 @@ $('settings-button').onclick=()=>$('settings-dialog').showModal();$('close-setti
 for(const [id,key] of [['consumption','consumption'],['fuel-price','fuelPrice']]){
   $(id).value=state[key]??'';$(id).oninput=()=>{state[key]=$(id).validity.valid?positive($(id).value):null;persist();renderSummary();};
 }
+function changeTollClass(value){state.tollClass=value;$('toll-class').value=value;if(route){route.toll=null;$('toll-amount').value='';}persist();renderSummary();}
 $('toll-class').value=state.tollClass;
-$('toll-class').onchange=()=>{state.tollClass=$('toll-class').value;if(route){route.toll=null;$('toll-amount').value='';}persist();renderSummary();};
+$('toll-class').onchange=()=>changeTollClass($('toll-class').value);
+$('trip-toll-class').onchange=()=>changeTollClass($('trip-toll-class').value);
 $('print').onclick=()=>window.print();
 $('export').onclick=()=>{
   if(!state.stops.length)return notify('Adicione locais primeiro.');

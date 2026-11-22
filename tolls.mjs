@@ -1,0 +1,55 @@
+import {decodePolyline6,distanceMetres} from './routing.mjs?v=12';
+
+export function tollTracePayload(leg){
+  return {encoded_polyline:leg.encodedShape,shape_match:'edge_walk',costing:'auto',filters:{action:'include',attributes:['edge.toll','edge.end_shape_index','edge.begin_shape_index','node.type','shape']}};
+}
+export function identifyTollStation(point,stations){
+  const matches=stations.map(station=>({station,distance:Math.min(...station.points.map(p=>distanceMetres(point,p)))})).filter(m=>m.distance<=80).sort((a,b)=>a.distance-b.distance);
+  if(!matches.length||matches[1]&&matches[1].distance-matches[0].distance<20)return null;
+  return matches[0].station;
+}
+const zero=()=>[0,0,0,0];
+export function priceTollTrace(trace,catalog){
+  const unavailable=reason=>({complete:false,cents:null,reason,charges:[]});
+  if(!Array.isArray(trace?.edges)||!trace.edges.length)return unavailable('Não foi possível identificar as portagens deste trajeto.');
+  let shape;try{shape=decodePolyline6(trace.shape);}catch{return unavailable('Traçado de portagens indisponível.');}
+  // Former electronic toll gantries remain on the map after charging ends.
+  const gates=trace.edges.filter((edge,i)=>/^toll_(booth|gantry)$/.test(edge.end_node?.type)&&[trace.edges[i-1],edge,trace.edges[i+1]].some(e=>e?.toll===true));
+  if(!gates.length)return unavailable('Há um troço com portagens sem preço identificado.');
+  const cents=zero(),charges=[];let entry=null,previous=null;
+  for(const gate of gates){
+    const coordinate=shape[gate.end_shape_index];
+    if(!coordinate)return unavailable('Localização de portagem indisponível.');
+    const station=identifyTollStation({lat:coordinate[1],lon:coordinate[0]},catalog.stations);
+    if(!station)return unavailable('Este trajeto passa numa portagem ainda sem tarifa na tabela local.');
+    // Several lanes/nodes at the same physical plaza are one crossing. Never
+    // deduplicate separate visits to the same station later in a trip.
+    let along=0;
+    if(previous?.id===station.id)for(let i=previous.index+1;i<=gate.end_shape_index&&along<=80;i++)along+=distanceMetres({lat:shape[i-1][1],lon:shape[i-1][0]},{lat:shape[i][1],lon:shape[i][0]});
+    if(previous?.id===station.id&&along<=80)continue;
+    previous={id:station.id,index:gate.end_shape_index};
+    if(station.kind==='open'){
+      if(entry)return unavailable('Combinação de sistemas de portagem ainda não coberta.');
+      if(!Array.isArray(station.cents)||station.cents.length!==4)return unavailable('Tarifa desta portagem indisponível.');
+      charges.push({label:station.name,cents:station.cents});
+    }else if(!entry){entry=station;}
+    else{
+      const fare=catalog.rates[entry.id+'>'+station.id];
+      if(entry.id===station.id||!Array.isArray(fare)||fare.length!==4)return unavailable('Este par de entradas e saídas ainda não tem tarifa verificada.');
+      charges.push({label:entry.name+' → '+station.name,cents:fare});entry=null;
+    }
+  }
+  if(entry)return unavailable('Não foi possível confirmar a entrada e a saída da autoestrada neste trajeto.');
+  for(const charge of charges)for(let i=0;i<4;i++){
+    const value=charge.cents[i];if(!Number.isSafeInteger(value)||value<0)return unavailable('Tarifa inválida.');cents[i]+=value;
+  }
+  return {complete:true,cents,charges,reason:''};
+}
+export function totalTollPrices(prices){
+  const complete=prices.length>0&&prices.every(p=>p?.complete);
+  return {complete,cents:complete?prices.reduce((sum,p)=>sum.map((v,i)=>v+p.cents[i]),zero()):null,missing:prices.filter(p=>!p?.complete).length};
+}
+export function selectedTollPrice(pricing,tollClass){
+  if(!pricing?.complete||!/^\d$/.test(String(tollClass))||Number(tollClass)<1||Number(tollClass)>4)return null;
+  return pricing.cents[Number(tollClass)-1]/100;
+}

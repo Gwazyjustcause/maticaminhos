@@ -52,9 +52,28 @@ Requests are user-triggered, cached per directed pair/preference in memory, batc
 
 The driver supplies consumption (L/100 km), fuel price (EUR/L), and toll class. No vehicle figures or current fuel prices are assumed. Fuel litres = route kilometres × consumption / 100. Fuel cost = litres × price.
 
-Choosing toll avoidance changes the **road route**, but automatic pricing for tolled roads is still not implemented. A direct cross-origin test of the official `Portagens.asmx/ObterCustoPortagens` endpoint returned `[0,0,0,0]` with the GitHub Pages origin/referrer, versus `[3.90,6.80,8.75,9.70]` for the identical Matisilva–Leiria geometry with the official site's origin/referrer (2026-11-22). CORS is allowed, but those external-site zeroes are not trustworthy prices. The app does not spoof the referrer or use that response as a quote. Reliable automatic prices require a supported pricing integration.
+Automatic toll **estimates** now use the bundled `toll-data.json` catalogue. It currently covers **45 reviewed plazas and 639 directed four-class fares**, principally in the Brisa northern/central networks and Brisal A17. This is **not nationwide coverage**: southern networks, bridges, unmatched plazas, and several electronic-toll systems are not yet priced. The tariff source is the official Brisa/Brisal PDF effective **26 August 2026** (VAT included). The PDF's 2025 southern pages and ambiguous extracted cells are excluded. Lost-ticket/maximum-charge diagonal cells are never used as ordinary fares. Standard classes 1–4 are supported; personal discounts and special exemptions are not inferred.
 
-The costs card is always expanded. When every calculated leg explicitly has `hasToll: false`, it shows **€0** automatically. Tolled or unverified routes show **Preço por confirmar** until the driver supplies a confirmed trip amount; the official calculator remains linked. Before a route exists, it shows **Calcule a rota**. A blank input remains unknown, not zero. The combined cost appears only when fuel and toll amounts are known. Recalculating or changing vehicle class clears the manual toll amount. The former **Sobre esta estimativa** section was removed at the user's request.
+After a route is ready, a background Valhalla `trace_attributes` POST inspects its exact encoded geometry using `edge_walk`. Crossing coordinates match reviewed plaza locations derived from OpenStreetMap/Geofabrik (ODbL). Closed-system entry/exit pairs use directed table fares; the estimate does not assume a return follows the same route. Trace requests share the routing queue and 1.1-second rate limit. Geometry results are cached in memory, and stale requests cannot update a replaced or cleared trip. Changing the vehicle class selects another tariff locally without another request.
+
+The always-visible cost card has a class selector and a per-leg breakdown. A whole-trip toll amount and combined fuel total appear only when **every leg has a verified price** (or the driver explicitly enters a manual trip amount). A route reported entirely without tolls shows €0. Unknown crossings, missing entry/exit pairs, ambiguous plazas, missing fares, failed traces, or a leg beginning/ending inside a closed toll system remain unavailable; no partial sum is presented as a complete total. Adjacent lane nodes are deduplicated, while later visits remain separate. Former gantries whose adjacent edges are non-tolled are ignored. The former “Sobre esta estimativa” section remains removed.
+
+The official government's public price endpoint is not used: an external-origin test returned zero for the identical geometry that its own site priced at €3.90. No paid API, secret, account, proxy, or backend is required by the static catalogue approach. Existing public routing-service availability limits still apply.
+
+### Updating static toll data
+
+Optional build-time Python dependencies: `pdfplumber` and `osmium`. Drivers and site builds do not require them. Download the official source PDF and the free Portugal PBF extract from the URLs in `toll-data.json`; keep these large source files outside Git. Then run:
+
+```sh
+python tools/import-toll-tables.py source.pdf rates.json
+python tools/extract-toll-nodes.py portugal.osm.pbf nodes.json
+node tools/build-toll-catalog.mjs rates.json nodes.json
+npm test
+npm run test:tolls
+npm run build
+```
+
+The importer is specific to the reviewed 2026 PDF layout; it requires review when the source layout or rates change. Review station IDs, entry/exit direction and lane locations in `tools/toll-stations.json` before adding coverage. Update effective/source/verification dates in the catalogue builder when replacing tariffs. The published data includes OpenStreetMap attribution and the ODbL license reference. `npm run test:tolls` checks live road access, outbound/return fares, and their sum against the production catalogue.
 
 ## Limits and privacy
 

@@ -37,7 +37,7 @@ export function parseTrip(data,batch){
     const leg=batch.legs[i],summary=result.summary;
     if(!summary||!Number.isFinite(summary.time)||!Number.isFinite(summary.length)||summary.time<0||summary.length<0)throw new Error('Tempos de percurso indisponíveis.');
     if(leg.mode==='avoid'&&summary.has_toll!==false)throw new Error(`Não foi possível confirmar um percurso sem portagens entre ${leg.from.name} e ${leg.to.name}. Altere o trajeto ou permita portagens neste trecho.`);
-    return {...leg,duration:summary.time,distance:summary.length*1000,hasToll:summary.has_toll===true,geometry:{type:'LineString',coordinates:decodePolyline6(result.shape)}};
+    return {...leg,duration:summary.time,distance:summary.length*1000,hasToll:typeof summary.has_toll==='boolean'?summary.has_toll:null,encodedShape:result.shape,geometry:{type:'LineString',coordinates:decodePolyline6(result.shape)}};
   });
 }
 export function totalTrip(legs,stops,service){
