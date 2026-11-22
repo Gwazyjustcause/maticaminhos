@@ -67,8 +67,53 @@ export function matchesFeature(feature,parsed,context=null){
 function toPlace(feature,parsed){
   const p=feature.properties,postal=p.osm_value==='postcode';
   const approximate=postal||((!p.name||p.name===p.street||p.osm_key==='highway'||p.osm_key==='place')&&!p.housenumber);
-  const address=[p.street||(p.osm_key==='highway'?p.name:null),p.housenumber,p.postcode||(postal?p.name:null),p.city||p.town||p.village,p.district,p.country].filter(Boolean).join(', ');
-  return {name:postal?`Entrega ${p.name||parsed.term}`:p.name||[p.street,p.housenumber].filter(Boolean).join(' ')||parsed.term,address:address||parsed.term,lat:feature.geometry.coordinates[1],lon:feature.geometry.coordinates[0],countrycode:'PT',approximate,streetMatch:p.osm_key==='highway',note:parsed.house&&!p.housenumber?'Número de porta não confirmado. Ajuste o pin.':''};
+  const address=[p.street||(p.osm_key==='highway'?p.name:null),p.housenumber,p.postcode||(postal?p.name:null),p.city||p.town||p.village,p.district,p.country].filter(Boolean).filter((part,i,parts)=>!i||normalize(part)!==normalize(parts[i-1])).join(', ');
+  return {name:postal?`Entrega ${p.name||parsed.term}`:p.name||[p.street,p.housenumber].filter(Boolean).join(' ')||parsed.term,address:address||parsed.term,lat:feature.geometry.coordinates[1],lon:feature.geometry.coordinates[0],countrycode:'PT',approximate,streetMatch:p.osm_key==='highway',note:parsed.house&&!p.housenumber?'Número de porta não confirmado. Ajuste o pin.':'',mapId:p.osm_type&&p.osm_id?`osm:${p.osm_type}:${p.osm_id}`:'',mapType:p.osm_type||'',kind:p.osm_key&&p.osm_value?`${p.osm_key}:${p.osm_value}`:'',street:p.street||'',houseNumber:p.housenumber||'',postcode:p.postcode||'',city:p.city||p.town||p.village||'',bounds:p.extent};
+}
+function placeNameKey(p){
+  let name=normalize(p.name).replace(/^(?:restaurante|cafe)\s+/,'');
+  const city=normalize(p.city);
+  if(city&&name.endsWith(' '+city))name=name.slice(0,-city.length).trim().replace(/\s+(?:de|do|da|em|no|na)$/,'');
+  return name;
+}
+function categoryKey(p){
+  if(/^amenity:(restaurant|cafe|fast_food|bar|pub)$/.test(p.kind))return 'food';
+  if(/^shop:(supermarket|convenience)$/.test(p.kind))return 'grocery';
+  return /^(building|place):/.test(p.kind||'')?'':p.kind||'';
+}
+function containsPoint(owner,point){
+  const b=owner.bounds;
+  return Array.isArray(b)&&b.length===4&&b.every(Number.isFinite)&&b[0]<b[2]&&b[3]<b[1]&&b[2]-b[0]<.006&&b[1]-b[3]<.006&&point.lon>=b[0]&&point.lon<=b[2]&&point.lat>=b[3]&&point.lat<=b[1];
+}
+export function sameSearchPlace(a,b){
+  if(a.mapId&&a.mapId===b.mapId)return true;
+  const name=placeNameKey(a);if(!name||name!==placeNameKey(b))return false;
+  if(a.city&&b.city&&normalize(a.city)!==normalize(b.city))return false;
+  if(a.houseNumber&&b.houseNumber&&normalize(a.houseNumber)!==normalize(b.houseNumber))return false;
+  const categoryA=categoryKey(a),categoryB=categoryKey(b);
+  if(categoryA&&categoryB&&categoryA!==categoryB)return false;
+  const metres=distance(a,b);if(!Number.isFinite(metres)||metres>150)return false;
+  // A POI node inside the same named building can have a different entrance street.
+  if(containsPoint(a,b)||containsPoint(b,a))return true;
+  const streetA=normalize(expandStreet(a.street||'')),streetB=normalize(expandStreet(b.street||''));
+  if(streetA&&streetB&&streetA!==streetB)return false;
+  if(a.postcode&&b.postcode&&normalize(a.postcode)!==normalize(b.postcode))return false;
+  if(metres<=25)return true;
+  if(streetA&&streetA===streetB)return metres<=(a.houseNumber&&b.houseNumber?100:50);
+  return false;
+}
+export function deduplicatePlaces(places){
+  const quality=p=>(p.source?1000:0)+(p.mapType==='W'||p.mapType==='R'?30:0)+(p.approximate?0:20)+(p.houseNumber?8:0)+(p.street?4:0)+(p.postcode?2:0);
+  const groups=[];
+  for(const place of [...places].sort((a,b)=>quality(b)-quality(a))){
+    // Compare with every member so a chain of nearby points cannot join branches.
+    const group=groups.find(items=>items.every(item=>sameSearchPlace(item,place)));
+    if(group)group.push(place);else groups.push([place]);
+  }
+  return groups.map(group=>group[0]);
+}
+function labelBranches(places){
+  return places.map(p=>places.filter(other=>normalize(other.name)===normalize(p.name)).length>1?{...p,displayName:`${p.name} — ${p.street?[p.street,p.houseNumber].filter(Boolean).join(' '):p.address}`}:{...p});
 }
 export function catalogMatches(parsed){return localPlaces.filter(p=>!parsed.street&&tokens(parsed.term).length>0&&includesTokens([p.name,...p.localities].join(' '),tokens(parsed.term))&&(!parsed.town||p.localities.some(name=>normalize(name)===normalize(parsed.town))));}
 export async function findPlaces(raw,town,depot,fetchPhoton){
@@ -104,7 +149,7 @@ export async function findPlaces(raw,town,depot,fetchPhoton){
   }
   const places=[...catalogMatches(parsed),...features.map(f=>toPlace(f,parsed))];
   places.sort((a,b)=>(a.source?-1:0)-(b.source?-1:0)||(parsed.street&&!parsed.house?(a.streetMatch?-1:0)-(b.streetMatch?-1:0):0)||distance(a,depot)-distance(b,depot));
-  const unique=[...new Map(places.map(p=>[`${normalize(p.name)}|${p.lat.toFixed(6)},${p.lon.toFixed(6)}`,p])).values()].slice(0,8);
+  const unique=labelBranches(deduplicatePlaces(places).sort((a,b)=>places.indexOf(a)-places.indexOf(b)).slice(0,8));
   if(!unique.length&&context&&parsed.street){
     unique.push({name:`${parsed.term}, ${parsed.town}`,address:`${parsed.town}, Portugal`,lat:context.geometry.coordinates[1],lon:context.geometry.coordinates[0],countrycode:'PT',approximate:true,localityFallback:true,note:'Rua não localizada. Este pin marca a localidade, não a rua. Mova-o até à entrada correta.'});
   }
