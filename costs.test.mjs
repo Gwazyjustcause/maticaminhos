@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {fuelEstimate,confirmedToll,totalEstimate} from './costs.mjs';
+assert.deepEqual(fuelEstimate(200000,10,1.6),{litres:20,cost:32});
+assert.deepEqual(fuelEstimate(0,10,1.6),{litres:0,cost:0});
+for(const args of [[200000,null,1.6],[200000,10,null],[-1,10,1.6],[100,0,1],[100,1,0],[NaN,1,1]])assert.equal(fuelEstimate(...args),null);
+assert.equal(confirmedToll('0'),0);
+assert.equal(confirmedToll('4.85'),4.85);
+for(const input of ['', ' ', '-1', 'abc', null])assert.equal(confirmedToll(input),null);
+assert.equal(totalEstimate(32,4.85),36.85);
+assert.equal(totalEstimate(32,0),32);
+assert.equal(totalEstimate(32,null),null);
+assert.equal(totalEstimate(null,5),null);
+console.log('Passed: fuel units, missing inputs, confirmed zero tolls, unconfirmed tolls, and incomplete totals.');

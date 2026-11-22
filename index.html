@@ -1,11 +1,55 @@
 <!doctype html>
-<html lang="pt"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MatiCaminhos · Planeador de rotas</title><meta name="description" content="Organize as entregas do dia a partir da Matisilva. Até 25 paragens, uma rota mais eficiente."><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><link rel="stylesheet" href="style.css"><script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script type="module" src="app.js"></script></head>
-<body><header><a class="brand" href="./"><span class="logo">m<span>·</span></span>MatiCaminhos</a><span class="header-note">MENOS QUILÓMETROS. MAIS CAMINHO.</span><button id="export" class="quiet">Exportar rota</button></header>
-<main><section class="intro"><div><p class="eyebrow">O SEU DIA, BEM ENCAMINHADO</p><h1>As entregas certas.<br><span>Pelo melhor caminho.</span></h1><p>Junte os restaurantes. Nós organizamos a viagem.</p></div><div class="date"><span>PLANEADOR DE ENTREGAS</span><strong id="today"></strong><small>Até 25 paragens por rota</small></div></section>
-<div class="workspace"><aside class="panel"><div class="panel-title"><h2>Planear o dia</h2><span class="pill">01 / Preparar</span></div><section class="depot"><div class="section-label"><span class="square">⌂</span><h3>Ponto de partida</h3><button id="change-depot" class="text-button">Alterar</button></div><strong id="depot-name">Matisilva — Carnes Lda</strong><p id="depot-address">Zona Industrial · Condeixa-a-Nova</p><label class="toggle"><input id="roundtrip" type="checkbox" checked> Regressar à empresa no final</label></section>
-<section class="stops"><div class="section-label"><h3>Restaurantes de hoje</h3><span id="count" class="count">0 / 25</span></div><form id="search-form"><label for="search">Nome e localidade, ou latitude, longitude</label><div class="search-row"><input id="search" placeholder="Ex.: restaurante, Coimbra" required autocomplete="off"><button id="search-button" type="submit" aria-label="Pesquisar restaurante">⌕</button></div></form><div id="results" aria-live="polite"></div><div id="stop-list"></div><div id="empty" class="empty"><span>＋</span><strong>A primeira paragem começa aqui</strong><p>Pesquise um restaurante e confirme a localização. Repita para todas as entregas.</p></div><button id="saved-button" class="saved-button">♡ Restaurantes guardados <span id="saved-count">0</span></button><div id="saved-list" hidden></div></section>
-<div class="settings"><label for="service">Tempo de entrega por paragem</label><div><input id="service" type="number" min="0" max="120" value="10"><span>minutos</span></div></div><div class="panel-bottom"><button id="optimize" class="primary">Otimizar a minha rota <span>✧</span></button><p>A ordem usa tempos de condução, sem trânsito em direto.</p></div></aside>
-<section class="map-panel"><div class="map-heading"><div><span class="live-dot"></span><strong>A sua rota, à vista</strong></div><button id="fit" class="quiet">Centrar mapa</button></div><div id="map" aria-label="Mapa das entregas"></div><div class="map-legend"><span><i class="legend-depot"></i>Empresa</span><span><i></i>Entrega</span><small>Selecione uma localização para a confirmar</small></div><div class="metrics"><div><span>PARAGENS</span><strong id="metric-stops">0<small> restaurantes</small></strong></div><div><span>DISTÂNCIA</span><strong id="metric-distance">—<small> km</small></strong></div><div><span>TEMPO TOTAL</span><strong id="metric-time">—</strong></div></div><div class="route-note"><span>✧</span><div><strong>Uma rota feita para o seu dia.</strong><p id="route-note">Adicione as entregas e otimize para ver a sequência sugerida.</p></div></div></section></div>
-<section id="itinerary" class="itinerary" hidden><div class="panel-title"><div><p class="eyebrow">PRONTO PARA SAIR</p><h2>A sua sequência de entregas</h2></div><button id="print" class="quiet">Imprimir</button></div><p>Abra cada etapa no Google Maps. Marque as entregas concluídas ao longo do dia.</p><div id="route-list"></div></section>
-<footer><span>MatiCaminhos <span class="footer-slash">/</span> Feito para quem anda na estrada.</span><span>Dados guardados neste navegador · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></span></footer><p class="providers">Pesquisa: Photon · Percursos: OSRM (serviços de demonstração, sujeitos a disponibilidade). Não considera trânsito, horários de receção, restrições de pesados ou cadeia de frio. Ao pesquisar ou calcular, as localizações são enviadas aos respetivos serviços.</p></main>
-<div id="status" role="status" aria-live="polite"></div><dialog id="coordinate-dialog"><form method="dialog"><h2>Confirmar localização</h2><p id="coordinate-description">Dê um nome a esta paragem.</p><label for="place-name">Nome</label><input id="place-name" required maxlength="120"><div class="dialog-actions"><button value="cancel" class="quiet">Cancelar</button><button id="confirm-place" value="confirm" class="primary">Confirmar</button></div></form></dialog></body></html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#196547">
+  <title>MatiCaminhos · Entregas de hoje</title>
+  <meta name="description" content="Adicione os restaurantes, calcule a rota e comece as entregas. Com estimativas de combustível e portagens.">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css?v=2">
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module" src="app.js?v=2"></script>
+</head>
+<body>
+  <header><a href="./" class="brand">Mati<span>Caminhos</span></a><span>Entregas, sem complicações.</span></header>
+  <main>
+    <div class="heading"><h1>Onde vamos hoje?</h1><p>Adicione os restaurantes. A rota fica por nossa conta.</p></div>
+    <div class="departure"><span class="home-icon" aria-hidden="true">⌂</span><div><small>SAÍDA</small><strong id="depot-name">Matisilva — Carnes Lda</strong></div><button id="change-depot" class="text-button">Alterar</button></div>
+
+    <section class="card" aria-labelledby="stops-title">
+      <div class="section-heading"><h2 id="stops-title">Restaurantes de hoje</h2><span id="count">0 / 25</span></div>
+      <form id="search-form"><label for="search">Adicionar restaurante</label><div class="search-row"><input id="search" placeholder="Nome do restaurante e localidade" required autocomplete="off"><button id="search-button" type="submit">Procurar</button></div></form>
+      <div id="results" aria-live="polite"></div>
+      <button id="saved-button" class="secondary saved-button">Escolher dos guardados <span id="saved-count">0</span></button>
+      <div id="saved-list" hidden></div>
+      <div id="empty" class="empty">Ainda não há restaurantes.<br><span>Procure acima ou escolha dos guardados.</span></div>
+      <div id="stop-list"></div>
+    </section>
+
+    <section id="trip" class="trip" hidden aria-labelledby="trip-title">
+      <h2 id="trip-title">Rota pronta</h2>
+      <p id="trip-summary"></p>
+      <div class="costs">
+        <button id="fuel-card" class="cost"><span>Combustível</span><strong id="fuel-cost">—</strong><small id="fuel-detail">Definir consumo e preço</small></button>
+        <button id="toll-card" class="cost"><span>Portagens</span><strong id="toll-cost">—</strong><small id="toll-detail">Por confirmar</small></button>
+        <div class="cost total"><span>Total estimado</span><strong id="total-cost">—</strong><small id="total-detail">Combustível + portagens</small></div>
+      </div>
+      <details id="toll-settings" class="card settings"><summary>Confirmar valor das portagens</summary><p>O preço automático ainda não está disponível. Consulte o calculador e indique o valor para esta rota, incluindo o regresso, se existir.</p><a class="secondary" href="https://portagens.infraestruturasdeportugal.pt/" target="_blank" rel="noopener">Consultar portagens</a><label for="toll-amount">Portagens desta rota (€)<input id="toll-amount" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="Valor confirmado"></label><p class="help">Indique 0 apenas se confirmar que a rota não tem portagens. Este valor é apagado quando recalcula a rota.</p></details>
+      <div class="next-stop"><small id="next-label">PRÓXIMA ENTREGA</small><h3 id="next-name"></h3><p id="next-address"></p><a id="navigate" class="primary navigate" target="_blank" rel="noopener">Abrir no Waze</a><a id="google-navigation" class="text-link" target="_blank" rel="noopener">Usar Google Maps</a><button id="delivered" class="secondary">Entregue · Próxima paragem</button></div>
+      <p class="estimate-note">Valores estimados, sem trânsito em direto. O percurso do Waze pode ser diferente e alterar os custos.</p>
+    </section>
+
+    <details id="vehicle-settings" class="card settings"><summary>O meu veículo <span>Consumo, preço e classe</span></summary><p>Preencha uma vez. Fica guardado neste dispositivo.</p><div class="field-grid"><label for="consumption">Consumo médio <span>L/100 km</span><input id="consumption" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" placeholder="Ex.: 9,5"></label><label for="fuel-price">Preço do combustível <span>€/litro</span><input id="fuel-price" type="number" inputmode="decimal" min="0.01" max="10" step="0.001" placeholder="Ex.: 1,65"></label></div><label for="toll-class">Classe de portagem<select id="toll-class"><option value="">Escolher classe</option><option value="1">Classe 1</option><option value="2">Classe 2</option><option value="3">Classe 3</option><option value="4">Classe 4</option></select></label><p class="help">Guarde a classe cobrada ao seu veículo para a consultar quando verificar as portagens. Confirme descontos com o operador.</p></details>
+
+    <details id="map-details" class="card"><summary>Ver mapa</summary><div id="map" aria-label="Mapa das entregas"></div><p class="help map-help">Pode tocar no mapa para adicionar um local.</p></details>
+
+    <details class="card settings"><summary>Mais opções</summary><label class="checkbox"><input id="roundtrip" type="checkbox" checked> Regressar à empresa no final</label><label for="service">Minutos em cada entrega<input id="service" type="number" inputmode="numeric" min="0" max="120" value="10"></label><div class="option-buttons"><button id="export" class="secondary">Exportar lista</button><button id="print" class="secondary">Imprimir</button></div></details>
+
+    <footer>Guardado neste dispositivo.<details><summary>Sobre os cálculos e os dados</summary><p>Pesquisa: Photon. Percursos: OSRM. Mapas: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>. As pesquisas e localizações são enviadas aos serviços usados. Serviços públicos sujeitos a disponibilidade. A ordem é aproximada e não considera trânsito, horários de receção ou restrições de pesados. O combustível é calculado pela distância × consumo ÷ 100 × preço por litro. As portagens são indicadas pelo utilizador após consulta externa; não são calculadas automaticamente neste site.</p></details></footer>
+  </main>
+  <div class="action-bar"><div><strong id="action-count">Adicione os restaurantes</strong><span id="action-hint">Até 25 entregas</span></div><button id="optimize" class="primary">Calcular rota</button></div>
+  <div id="status" role="status" aria-live="polite" hidden></div>
+  <dialog id="coordinate-dialog"><form method="dialog"><h2>Nome do local</h2><p id="coordinate-description"></p><label for="place-name">Nome<input id="place-name" required maxlength="120"></label><div class="dialog-actions"><button value="cancel" formnovalidate class="secondary">Cancelar</button><button value="confirm" class="primary">Adicionar</button></div></form></dialog>
+</body>
+</html>
