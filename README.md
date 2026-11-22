@@ -34,6 +34,8 @@ Business/search pins remain at their original coordinates. Before matrix optimiz
 
 The same prepared road coordinates and correlation settings are used by both the time matrix and final route. Road-access points appear as small outlined circles, linked to the place pins with dashed lines that are informational, not extra driving segments. Navigation links target the road access. Cached routes include their resolved access coordinates in their key, so changing an entrance cannot reuse an old route. Access lookups are cached only in memory and refreshed after reload.
 
+If the matrix returns an unavailable connection (for example, a destination-only supermarket access road), the app automatically checks that directed pair with the full driving-route service, using the same access and toll preference. It uses the verified duration for optimization and caches the geometry for the final route. It never substitutes straight-line times or silently allows tolls. The live access regression includes Pingo Doce Crujeiro in Trancoso in both directions with and without tolls.
+
 Each stop has an **Acesso** control for adjusting its vehicle/loading entrance independently of the business pin. A manual entrance can be at most 1 km from the business and must correlate to a drivable road within 100 metres. Manual entrances persist with the stop and update an existing favourite without automatically favouriting anything. Moving the business pin clears its manual entrance. An unavailable access or unreachable matrix pair identifies the place that needs attention. Road tagging cannot establish the actual loading-gate location or physical gate availability; drivers can adjust the suggested entrance.
 
 ## Tolls and routing

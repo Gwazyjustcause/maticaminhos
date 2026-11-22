@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {tripLegs,legKey,routeBatches,routePayload,parseTrip,totalTrip,arrivalTime,moveStop,normalizeQuery,decodePolyline6,matrixBatches,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs';
+import {tripLegs,legKey,routeBatches,routePayload,parseTrip,totalTrip,arrivalTime,moveStop,normalizeQuery,decodePolyline6,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs';
 const depot={name:'Empresa',lat:40,lon:-8},a={name:'Continente',lat:41,lon:-8},b={name:'Entrega por morada',lat:42,lon:-8};
 const overrides={[legKey(a,b)]:'avoid',[legKey(b,depot)]:'avoid'};
 const legs=tripLegs(depot,[a,b],true,'allow',overrides);
@@ -53,3 +53,11 @@ assert.equal(roadAccessPayload([manual]).locations[0].lat,40.002);
 assert.equal(resolveRoadAccess(manual,{edges:[{correlated_lat:40.0021,correlated_lon:-8}]}).manual,true);
 assert.throws(()=>resolveRoadAccess({...restaurant,manualAccess:{lat:41,lon:-8}},{edges:[{correlated_lat:41,correlated_lon:-8}]}));
 console.log('Passed: building pins remain unchanged, nearest bounded road access, shared routing coordinates, manual entrances, cache identity, and named access failures.');
+const recovered=[];
+const times=await matrixTimes([[{time:0},{time:null}],[null,{time:0}]],[depot,a],[depot,a],async(from,to)=>{recovered.push([from,to]);return from===depot?120:180;});
+assert.deepEqual(times,[[0,120],[180,0]]);
+assert.deepEqual(recovered,[[depot,a],[a,depot]],'Recover only missing cells and preserve direction.');
+await assert.rejects(matrixTimes([[{time:null}]],[depot],[a],async()=>{throw new Error('Sem percurso sem portagens');}),/sem portagens/,'Never invent a duration or change toll preference when recovery fails.');
+await assert.rejects(matrixTimes([[{time:null}]],[depot],[a],async()=>null),/tempo de condução/);
+await assert.rejects(matrixTimes([],[depot],[a],async()=>120),/comparar/);
+console.log('Passed: missing matrix connections recover via directed driving routes; real failures remain errors.');

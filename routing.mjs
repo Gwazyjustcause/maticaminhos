@@ -52,4 +52,20 @@ export function arrivalTime(departure,seconds){
 }
 export function moveStop(stops,from,to){const next=[...stops];if(from<0||to<0||from>=next.length||to>=next.length)return next;const [p]=next.splice(from,1);next.splice(to,0,p);return next;}
 export function matrixBatches(points,size=10){const batches=[];for(let i=0;i<points.length;i+=size)for(let j=0;j<points.length;j+=size)batches.push({sourceOffset:i,targetOffset:j,sources:points.slice(i,i+size),targets:points.slice(j,j+size)});return batches;}
+export async function matrixTimes(rows,sources,targets,resolveMissing){
+  if(!Array.isArray(rows)||rows.length!==sources.length||rows.some(row=>!Array.isArray(row)||row.length!==targets.length))throw new Error('O serviço não conseguiu comparar as paragens. Pode calcular na ordem atual.');
+  const times=[];
+  for(let i=0;i<sources.length;i++){
+    const row=[];
+    for(let j=0;j<targets.length;j++){
+      let time=rows[i][j]?.time;
+      // A matrix can miss destination-only access roads that /route can reach.
+      if(!Number.isFinite(time)||time<0)time=await resolveMissing(sources[i],targets[j]);
+      if(!Number.isFinite(time)||time<0)throw new Error('Não foi possível confirmar o tempo de condução entre as paragens.');
+      row.push(time);
+    }
+    times.push(row);
+  }
+  return times;
+}
 export function normalizeQuery(value){const trimmed=value.trim();if(/^\d{4}$/.test(trimmed))return trimmed+' Portugal';return /^\d{4}\s*-?\s*\d{3}$/.test(trimmed)?trimmed.replace(/\D/g,'').replace(/^(\d{4})(\d{3})$/,'$1-$2')+' Portugal':trimmed;}

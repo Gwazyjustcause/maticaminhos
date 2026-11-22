@@ -1,6 +1,6 @@
 import {optimizeOrder} from './optimizer.mjs?v=6';
 import {fuelEstimate,totalEstimate,confirmedToll} from './costs.mjs?v=6';
-import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=6';
+import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=9';
 import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs?v=6';
 
 const $=id=>document.getElementById(id);
@@ -264,10 +264,20 @@ async function matrixFor(points,mode){
     const batch=batches[i],locations=places=>places.map(routingLocation);
     $('route-message').textContent=`A comparar paragens ${i+1} de ${batches.length} (${mode==='avoid'?'evitar':'permitir'} portagens)…`;
     const data=await routingRequest('sources_to_targets',{sources:locations(batch.sources),targets:locations(batch.targets),costing:'auto',costing_options:costing(mode),units:'kilometers'});
-    if(!Array.isArray(data.sources_to_targets)||data.sources_to_targets.length!==batch.sources.length||data.sources_to_targets.some(row=>row.length!==batch.targets.length))throw new Error('O serviço não conseguiu comparar as paragens. Pode calcular na ordem atual.');
-    data.sources_to_targets.forEach((row,source)=>row.forEach((cell,target)=>{
-      if(!Number.isFinite(cell.time)||cell.time<0){const from=batch.sources[source],to=batch.targets[target],error=new Error(`Não foi possível ligar «${from.name}» a «${to.name}» pela estrada. Confirme o acesso de viatura e a opção de portagens.`);error.place=to;throw error;}
-      matrix[batch.sourceOffset+source][batch.targetOffset+target]=cell.time;
+    const times=await matrixTimes(data.sources_to_targets,batch.sources,batch.targets,async(from,to)=>{
+      const leg=tripLegs(from,[to],false,mode)[0],key=routeCacheKey(leg);
+      const cached=legCache.get(key);if(cached)return cached.duration;
+      $('route-message').textContent=`A confirmar o acesso por estrada a «${to.name}»…`;
+      try{
+        const result=parseTrip(await routingRequest('route',routePayload({mode,legs:[leg]})),{mode,legs:[leg]})[0];
+        legCache.set(key,result);return result.duration;
+      }catch(cause){
+        if(cause.name==='TimeoutError')throw cause;
+        const error=new Error(`Não foi possível confirmar o percurso de «${from.name}» a «${to.name}». ${cause.message}`);error.place=to;throw error;
+      }
+    });
+    times.forEach((row,source)=>row.forEach((time,target)=>{
+      matrix[batch.sourceOffset+source][batch.targetOffset+target]=time;
     }));
   }
   return matrix;
