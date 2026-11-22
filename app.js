@@ -1,6 +1,7 @@
 import {optimizeOrder} from './optimizer.mjs';
 import {fuelEstimate,totalEstimate,confirmedToll} from './costs.mjs';
 import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches} from './routing.mjs';
+import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs';
 
 const $=id=>document.getElementById(id);
 const escapeHTML=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -38,7 +39,7 @@ function initializeMap(){
   markers=L.layerGroup().addTo(map);routeLines=L.layerGroup().addTo(map);
   map.on('click',event=>{
     if(busy)return;
-    if(pending){pending.lat=event.latlng.lat;pending.lon=event.latlng.lng;pending.approximate=false;pendingMarker?.setLatLng(event.latlng);}
+    if(pending){pending.lat=event.latlng.lat;pending.lon=event.latlng.lng;pending.approximate=false;pendingMarker?.setLatLng(event.latlng);$('picker-help').textContent='Pin ajustado. Confirme o nome e adicione a paragem.';}
     else beginPicker({name:'',address:`${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`,lat:event.latlng.lat,lon:event.latlng.lng});
   });
   new ResizeObserver(()=>map.invalidateSize()).observe($('map'));
@@ -64,12 +65,12 @@ function beginPicker(place,editIndex=null){
   if(busy)return;
   closeResults();pending={...place,editIndex};pendingFavorite=isFavorite(place);$('place-name').value=place.name;
   $('picker-title').textContent=changingDepot?'Ponto de partida':editIndex!==null?'Editar paragem':place.approximate?'Confirmar a entrada de entrega':'Confirmar local';
-  $('picker-help').textContent=place.approximate?'Localização aproximada. Arraste o pin até à entrada.':'Arraste o pin para ajustar a entrada de entrega.';
+  $('picker-help').textContent=place.note||(place.approximate?'Localização aproximada. Arraste o pin até à entrada.':'Arraste o pin para ajustar a entrada de entrega.');
   $('picker-heart').textContent=pendingFavorite?'♥':'♡';$('picker-heart').setAttribute('aria-pressed',String(pendingFavorite));
   $('confirm-place').textContent=editIndex!==null?'Guardar':'Adicionar';$('place-picker').hidden=false;
   if(map){
     pendingMarker?.remove();pendingMarker=L.marker([place.lat,place.lon],{draggable:true,icon:L.divIcon({className:'',html:'<div class="selection-pin"></div>',iconSize:[33,33],iconAnchor:[16,28]})}).addTo(map);
-    pendingMarker.on('dragend',()=>{const p=pendingMarker.getLatLng();pending.lat=p.lat;pending.lon=p.lng;pending.approximate=false;});
+    pendingMarker.on('dragend',()=>{const p=pendingMarker.getLatLng();pending.lat=p.lat;pending.lon=p.lng;pending.approximate=false;$('picker-help').textContent='Pin ajustado. Confirme o nome e adicione a paragem.';});
     map.flyTo([place.lat,place.lon],place.approximate?15:17,{duration:.4});
   }
 }
@@ -79,6 +80,7 @@ $('pick-map').onclick=()=>{if(!map)return notify('O mapa não está disponível.
 $('picker-heart').onclick=()=>{pendingFavorite=!pendingFavorite;$('picker-heart').textContent=pendingFavorite?'♥':'♡';$('picker-heart').setAttribute('aria-pressed',String(pendingFavorite));};
 $('confirm-place').onclick=()=>{
   if(!pending||busy)return;
+  if(pending.localityFallback&&pending.approximate)return notify('Este pin marca apenas a localidade. Mova-o até à rua e à entrada corretas antes de adicionar.');
   const place={name:$('place-name').value.trim()||pending.name||pending.address,address:pending.address,lat:pending.lat,lon:pending.lon,approximate:pending.approximate===true};
   const editIndex=pending.editIndex;
   if(editIndex!==null){
@@ -138,7 +140,7 @@ function render(){
   $('stop-list').innerHTML=state.stops.map((p,i)=>`${legHTML(legs[i])}<article class="stop${route&&i<route.completed?' done':''}" draggable="true" data-stop-index="${i}"><div class="stop-main"><span class="number">${route&&i<route.completed?'✓':i+1}</span><div class="stop-text"><button class="stop-name" data-edit="${i}" aria-label="Editar ${escapeHTML(p.name)}">${escapeHTML(p.name)}</button><small>${escapeHTML(p.address)}${p.approximate?' · Pin aproximado':''}</small></div></div><div class="stop-actions"><button class="move-button" data-up="${i}" aria-label="Subir ${escapeHTML(p.name)}" ${i===0?'disabled':''}>Subir</button><button class="move-button" data-down="${i}" aria-label="Descer ${escapeHTML(p.name)}" ${i===state.stops.length-1?'disabled':''}>Descer</button><button class="heart" data-heart="${i}" aria-label="${isFavorite(p)?'Retirar dos':'Guardar nos'} favoritos: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="icon-button" data-remove="${i}" aria-label="Remover ${escapeHTML(p.name)}">×</button></div></article>`).join('');
   $('return-leg').innerHTML=state.roundtrip&&state.stops.length?legHTML(legs.at(-1)):'';
   const hasStops=state.stops.length>0;
-  $('calculate').disabled=busy||searching||!hasStops;$('optimize').disabled=busy||searching||state.stops.length<2;
+  $('calculate').disabled=busy||searching||!hasStops;$('optimize').disabled=busy||searching||!hasStops;
   if(busy)for(const element of document.querySelectorAll('button,input,select'))element.disabled=true;
   renderSummary();renderNavigation();drawMap();panel.scrollTop=scrollPosition;
 }
@@ -200,12 +202,14 @@ async function matrixFor(points,mode){
 function setBusy(value){
   busy=value;
   for(const element of document.querySelectorAll('button,input,select'))element.disabled=value;
-  $('calculate').textContent=value?'A calcular…':'Calcular rota';
+  $('calculate').textContent=value?'A calcular…':'Manter ordem';
+  if(!value)$('optimize').textContent='Rota mais rápida';
   render();
 }
 async function calculate(reorder){
   if(busy||searching||!state.stops.length)return;
   clearTimeout(calculateTimer);cancelPicker();closeResults();setBusy(true);
+  if(reorder)$('optimize').textContent='A otimizar…';
   route=null;$('toll-amount').value='';render();
   try{
     let stops=[...state.stops];
@@ -236,35 +240,47 @@ async function calculate(reorder){
 $('calculate').onclick=()=>calculate(false);$('optimize').onclick=()=>calculate(true);
 
 let lastSearch=0;
+let lastPhotonRequest=0;
+async function photonRequest(endpoint,params){
+  const key='search-pt-v5:'+endpoint+'?'+params;
+  try{const cached=JSON.parse(sessionStorage.getItem(key));if(cached)return cached;}catch{}
+  const wait=Math.max(0,1100-(Date.now()-lastPhotonRequest));if(wait)await new Promise(resolve=>setTimeout(resolve,wait));lastPhotonRequest=Date.now();
+  const data=await requestJSON('https://photon.komoot.io/'+endpoint+'?'+params);
+  try{sessionStorage.setItem(key,JSON.stringify(data));}catch{}
+  return data;
+}
 $('search-form').onsubmit=async event=>{
   event.preventDefault();if(busy||searching)return;
   const raw=$('search').value.trim();if(raw.length<3)return notify('Escreva um nome, uma morada ou um código postal.');
   const coord=raw.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
   if(coord){const lat=Number(coord[1]),lon=Number(coord[2]);if(Math.abs(lat)>90||Math.abs(lon)>180)return notify('Coordenadas inválidas.');beginPicker({lat,lon,name:'',address:raw});return;}
-  if(raw.includes('maps.app.goo.gl'))return notify('Cole a morada, o nome do local ou as coordenadas do Google Maps.');
+  if(raw.includes('maps.app.goo.gl'))return notify('Abra esse link e copie a morada ou o link completo da barra de endereço do Google Maps.');
+  const imported=parseMapsCoordinates(raw);
   if(Date.now()-lastSearch<1500)return;lastSearch=Date.now();searching=true;showingFavorites=false;
   $('results-panel').hidden=false;$('results-title').textContent='A procurar…';$('results').replaceChildren();$('search-button').disabled=true;render();
   try{
-    const query=normalizeQuery(raw),cacheKey='photon-v3:'+query;
-    let data;try{data=JSON.parse(sessionStorage.getItem(cacheKey));}catch{}
-    if(!data){
-      const params=new URLSearchParams({q:query,limit:'8',lat:state.depot.lat,lon:state.depot.lon});
-      data=await requestJSON('https://photon.komoot.io/api/?'+params);
-      try{sessionStorage.setItem(cacheKey,JSON.stringify(data));}catch{}
+    if(imported){
+      const data=await photonRequest('reverse',new URLSearchParams({lat:imported.lat,lon:imported.lon,radius:'1',limit:'1'}));
+      const feature=(data.features||[])[0];
+      if(!portugueseFeature(feature))throw new Error('Este local não foi confirmado em Portugal.');
+      let decoded;try{decoded=decodeURIComponent(raw);}catch{decoded=raw;}
+      const name=(decoded.match(/\/place\/([^/]+)/)?.[1]||'Local do Google Maps').replaceAll('+',' ');
+      const p=feature.properties;
+      beginPicker({...imported,name,address:[p.street,p.housenumber,p.postcode,p.city||p.town||p.village,'Portugal'].filter(Boolean).join(', '),approximate:true});
+      return;
     }
-    results=(data.features||[]).filter(f=>f.geometry?.type==='Point').map(feature=>{
-      const p=feature.properties,postal=p.osm_value==='postcode',streetOnly=(!p.name||p.name===p.street||p.osm_key==='highway'||p.osm_key==='place')&&!p.housenumber;
-      const address=[p.street||(p.osm_key==='highway'?p.name:null),p.housenumber,p.postcode||(postal?p.name:null),p.city||p.town||p.village,p.district,p.country].filter(Boolean).join(', ');
-      return {name:postal?`Entrega ${p.name||raw}`:p.name||[p.street,p.housenumber].filter(Boolean).join(' ')||raw,address:address||p.name||raw,lat:feature.geometry.coordinates[1],lon:feature.geometry.coordinates[0],approximate:postal||streetOnly};
-    });
+    const found=await findPlaces(normalizeQuery(raw),$('town').value,state.depot,photonRequest);
+    results=found.places;
     renderResults();
-  }catch{$('results-title').textContent='Pesquisa indisponível';$('results').innerHTML='<p class="results-empty">Tente novamente ou use «Escolher no mapa» para marcar a entrada de entrega.</p>';}
+  }catch(error){$('results-title').textContent='Não foi possível localizar';$('results').innerHTML=`<p class="results-empty">${escapeHTML(error.message||'Tente novamente ou escolha o ponto no mapa.')}</p>${lookupHTML()}`;}
   finally{searching=false;$('search-button').disabled=false;render();}
 };
+function lookupHTML(){const query=$('search').value.trim();return query?`<div class="lookup-help"><span>Falta um estabelecimento?</span><a href="${escapeHTML(googleLookupURL(query,$('town').value))}" target="_blank" rel="noopener">Procurar no Google Maps</a><small>Depois cole aqui a morada ou o link completo com coordenadas.</small></div>`:'';}
 function renderResults(){
   const places=showingFavorites?state.saved:results;
   $('results-title').textContent=showingFavorites?'Os seus favoritos':'Escolha o local certo';
-  $('results').innerHTML=places.length?places.map((p,i)=>`<div class="result"><button class="result-body" data-preview="${i}"><strong>${escapeHTML(p.name)}</strong><small>${escapeHTML(p.address)}${p.approximate?' · Zona aproximada: confirme o pin':''}</small></button><button class="heart" data-result-heart="${i}" aria-label="${isFavorite(p)?'Retirar dos':'Guardar nos'} favoritos: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="add-result" data-result-add="${i}">${p.approximate?'No mapa':'Adicionar'}</button></div>`).join(''):`<p class="results-empty">${showingFavorites?'Ainda não há favoritos. Toque no coração de um local para o guardar.':'Sem resultados. Acrescente a localidade ou escolha o ponto no mapa. Não é necessário ter um nome comercial.'}</p>`;
+  const entries=places.length?places.map((p,i)=>`<div class="result"><button class="result-body" data-preview="${i}"><strong>${escapeHTML(p.name)}</strong><small>${escapeHTML(p.address)}${p.note?' · '+escapeHTML(p.note):p.approximate?' · Zona aproximada: confirme o pin':''}</small>${p.source?'<small>Localização publicada pelo estabelecimento</small>':''}</button><button class="heart" data-result-heart="${i}" aria-label="${isFavorite(p)?'Retirar dos':'Guardar nos'} favoritos: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="add-result" data-result-add="${i}">${p.approximate?'No mapa':'Adicionar'}</button></div>`).join(''):`<p class="results-empty">${showingFavorites?'Ainda não há favoritos. Toque no coração de um local para o guardar.':'Sem correspondência em Portugal. Indique a rua e a cidade/vila, ou escolha o ponto no mapa.'}</p>`;
+  $('results').innerHTML=entries+(showingFavorites?'':lookupHTML());
 }
 $('saved-button').onclick=()=>{showingFavorites=true;$('results-panel').hidden=false;renderResults();};
 $('results').onclick=event=>{
