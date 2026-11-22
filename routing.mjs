@@ -22,6 +22,33 @@ export function resolveRoadAccess(point,result){
   if(!candidates.length)throw fail();
   const nearest=candidates[0];return {lat:nearest.lat,lon:nearest.lon,offset:distanceMetres(point,nearest),manual};
 }
+// Keep entrances separate from today's route and saved-address membership.
+// Exact business coordinates identify a place; nearby shops must not share entrances.
+export function restoreAccessMemory(records){
+  if(!Array.isArray(records))return [];
+  const memory=new Map();
+  for(const record of records){
+    if(!validCoordinate(record))continue;
+    const entry={lat:record.lat,lon:record.lon};
+    if(validCoordinate(record.manualAccess)&&distanceMetres(entry,record.manualAccess)<=1000)entry.manualAccess={lat:record.manualAccess.lat,lon:record.manualAccess.lon};
+    const road=record.road,manual=!!entry.manualAccess;
+    if(validCoordinate(road)&&(road.manual===true)===manual&&distanceMetres(entry.manualAccess||entry,road)<=(manual?100:300)){
+      entry.road={lat:road.lat,lon:road.lon,offset:distanceMetres(entry,road),manual};
+    }
+    if(entry.manualAccess||entry.road)memory.set(pointKey(entry),entry);
+  }
+  return [...memory.values()].slice(-1000);
+}
+export function rememberAccess(memory,place,road=null){
+  const entry=restoreAccessMemory([{...place,road}])[0];
+  if(!entry)return memory;
+  return [...memory.filter(p=>pointKey(p)!==pointKey(place)),entry].slice(-1000);
+}
+export function withRememberedAccess(place,memory){
+  if(validCoordinate(place.manualAccess))return {...place};
+  const known=memory.find(p=>pointKey(p)===pointKey(place));
+  return known?.manualAccess?{...place,manualAccess:{...known.manualAccess}}:{...place};
+}
 export function routingLocation(p){const road=validCoordinate(p.road)?p.road:null;return {lat:road?.lat??p.lat,lon:road?.lon??p.lon,type:'break',radius:road?30:100,search_cutoff:road?75:500,minimum_reachability:50,search_filter:{max_road_class:'trunk',exclude_ramp:true,exclude_ferry:true}};}
 export function routePayload(batch){return {locations:[batch.legs[0].from,...batch.legs.map(leg=>leg.to)].map(routingLocation),costing:'auto',costing_options:costing(batch.mode),directions_type:'none',units:'kilometers'};}
 export function decodePolyline6(encoded){

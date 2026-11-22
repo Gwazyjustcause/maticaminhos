@@ -1,7 +1,7 @@
 import {optimizeOrder} from './optimizer.mjs?v=6';
 import {fuelEstimate,totalEstimate,tollForLegs} from './costs.mjs?v=11';
 import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=15';
-import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=12';
+import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation,distanceMetres,restoreAccessMemory,rememberAccess,withRememberedAccess} from './routing.mjs?v=18';
 import {findPlaces,googleLookupURL,googleMapsURL,resolveMapsLink,portugueseFeature} from './search.mjs?v=17';
 
 const $=id=>document.getElementById(id);
@@ -14,7 +14,7 @@ const validPlace=p=>p&&typeof p.name==='string'&&typeof p.address==='string'&&Nu
 const positive=value=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
 const modeValue=value=>value==='avoid'?'avoid':'allow';
 const defaultGroups=[{id:'restaurants',name:'Restaurantes'},{id:'continentes',name:'Continente'},{id:'pingo-doce',name:'Pingo Doce'}];
-let state={depot:defaultDepot,stops:[],saved:[],groups:defaultGroups,roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{},mapStyle:'street',theme:'light'};
+let state={depot:defaultDepot,stops:[],saved:[],groups:defaultGroups,roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{},mapStyle:'street',theme:'light',accesses:[]};
 try{
   const data=JSON.parse(localStorage.getItem('maticaminhos-v1'));
   if(data)state={
@@ -25,16 +25,24 @@ try{
     roundtrip:data.roundtrip!==false,service:Number.isFinite(data.service)?Math.max(0,Math.min(120,data.service)):10,
     consumption:positive(data.consumption),fuelPrice:positive(data.fuelPrice),tollClass:/^[1-4]$/.test(data.tollClass)?String(data.tollClass):'',
     mode:modeValue(data.mode),overrides:Object.fromEntries(Object.entries(data.overrides||{}).filter(([,v])=>v==='allow'||v==='avoid')),
+    accesses:restoreAccessMemory(data.accesses),
     mapStyle:data.mapStyle==='satellite'?'satellite':'street',theme:data.theme==='dark'?'dark':'light'
   };
 }catch{}
 state.groups=state.groups.map(g=>g.id==='continentes'&&g.name==='Continentes'?{...g,name:'Continente'}:g);
 state.saved=state.saved.map(p=>({...p,groupId:state.groups.some(g=>g.id===p.groupId)?p.groupId:''}));
-let selectedGroup='all',editingGroup=null;
+// Migrate entrances already attached to saved addresses or the current route.
+for(const place of [...state.saved,state.depot,...state.stops]){
+  if(place.manualAccess&&!state.accesses.some(p=>pointKey(p)===pointKey(place)))state.accesses=rememberAccess(state.accesses,place);
+}
+state.depot=withRememberedAccess(state.depot,state.accesses);
+state.stops=state.stops.map(p=>withRememberedAccess(p,state.accesses));
+state.saved=state.saved.map(p=>withRememberedAccess(p,state.accesses));
+let selectedGroup='all',editingGroup=null,selectedStop=null;
 let route=null,busy=false,searching=false,changingDepot=false,pending=null,pendingMarker=null,pendingFavorite=false,toastTimer,calculateTimer,results=[],showingFavorites=false,draggedIndex=null;
 let map,markers,routeLines,streetTiles,satelliteTiles,tileErrors=0;
 const legCache=new Map();
-const roadCache=new Map();
+const roadCache=new Map(state.accesses.filter(p=>p.road).map(p=>[accessKey(p),p.road]));
 const tollTraceCache=new Map();
 let tollCatalogPromise;
 let accessIssue=null;
@@ -96,7 +104,7 @@ $('map-satellite').onclick=()=>setMapStyle('satellite');
 function drawMap(fit=false){
   if(!map)return;
   markers.clearLayers();routeLines.clearLayers();
-  [state.depot,...state.stops].forEach((p,i)=>L.marker([p.lat,p.lon],{icon:L.divIcon({className:'map-pin'+(!i?' depot-pin':''),html:i||'⌂',iconSize:[32,32],iconAnchor:[16,16]})}).addTo(markers).bindPopup(`<strong>${escapeHTML(p.name)}</strong><br>${escapeHTML(p.address)}`));
+  [state.depot,...state.stops].forEach((p,i)=>L.marker([p.lat,p.lon],{title:i?'Paragem '+i+' · '+p.name:'Partida · '+p.name,alt:i?'Paragem '+i+' · '+p.name:'Partida · '+p.name,bubblingMouseEvents:false,icon:L.divIcon({className:'map-pin'+(!i?' depot-pin':''),html:i||'⌂',iconSize:[32,32],iconAnchor:[16,16]})}).addTo(markers).bindPopup(`<strong>${escapeHTML(p.name)}</strong><br>${escapeHTML(p.address)}`).on('click',()=>i?showStop(i-1):showRouteTop()));
   if(route){
     route.legs.forEach(leg=>{
       L.geoJSON(leg.geometry,{style:{color:'white',weight:8,opacity:.8},interactive:false}).addTo(routeLines);
@@ -104,7 +112,7 @@ function drawMap(fit=false){
     });
     for(const p of [state.depot,...state.stops]){const road=roadFor(p);if(road&&road.offset>5){
       L.polyline([[p.lat,p.lon],[road.lat,road.lon]],{color:'#738377',weight:2,dashArray:'3 5',opacity:.7}).addTo(routeLines);
-      L.circleMarker([road.lat,road.lon],{radius:5,color:'#17684b',fillColor:'white',fillOpacity:1,weight:2}).addTo(routeLines).bindPopup(`Acesso de viatura · ${Math.round(road.offset)} m de ${escapeHTML(p.name)}`);
+      L.circleMarker([road.lat,road.lon],{bubblingMouseEvents:false,radius:5,color:'#17684b',fillColor:'white',fillOpacity:1,weight:2}).addTo(routeLines).bindPopup(`Acesso de viatura · ${Math.round(road.offset)} m de ${escapeHTML(p.name)}`).on('click',()=>{const index=state.stops.findIndex(stop=>samePlace(stop,p));if(index>=0)showStop(index);else showRouteTop();});
     }}
   }
   if(fit)fitMap();
@@ -116,6 +124,23 @@ function fitMap(){
   map.fitBounds(L.latLngBounds(points),{padding:[40,55],maxZoom:14});
 }
 $('fit').onclick=fitMap;
+function revealRoutePanel(){
+  if(showingFavorites&&getComputedStyle(document.querySelector('.route-panel')).display==='none')toggleSaved(false);
+}
+function showStop(index){
+  const place=state.stops[index];if(!place)return;
+  revealRoutePanel();selectedStop=pointKey(place);
+  const panel=document.querySelector('.route-panel'),card=$('stop-list').querySelector('[data-stop-index="'+index+'"]');
+  if(!card)return;
+  for(const stop of $('stop-list').querySelectorAll('.stop'))stop.classList.toggle('is-selected',stop===card);
+  // Scroll this panel only: scrolling the document would move the permanent map.
+  panel.scrollTo({top:Math.max(0,panel.scrollTop+card.getBoundingClientRect().top-panel.getBoundingClientRect().top-16),behavior:'instant'});
+}
+function showRouteTop(){
+  revealRoutePanel();selectedStop=null;
+  for(const card of $('stop-list').querySelectorAll('.is-selected'))card.classList.remove('is-selected');
+  document.querySelector('.route-panel').scrollTo({top:0,behavior:'instant'});
+}
 function closeResults(){$('results-panel').hidden=true;}
 $('close-results').onclick=closeResults;
 function beginPicker(place,editIndex=null){
@@ -148,8 +173,11 @@ $('confirm-place').onclick=()=>{
   if(pending.accessOnly){
     const index=pending.editIndex,place=pending.originalPlace,willRecalculate=!!route;
     const updated={...place,manualAccess:{lat:pending.lat,lon:pending.lon}};
+    if(distanceMetres(place,updated.manualAccess)>1000)return notify('Escolha uma entrada a menos de 1 km do local.');
+    state.accesses=rememberAccess(state.accesses,updated);
     if(index<0)state.depot=updated;else state.stops[index]=updated;
     state.saved=state.saved.map(saved=>samePlace(saved,place)?{...saved,manualAccess:updated.manualAccess}:saved);
+    state.stops=state.stops.map(stop=>samePlace(stop,place)?{...stop,manualAccess:updated.manualAccess}:stop);
     accessIssue=null;cancelPicker();planChanged();persist();
     if(!willRecalculate)calculate(false);
     return;
@@ -163,13 +191,13 @@ $('confirm-place').onclick=()=>{
     if(state.stops.some((p,i)=>i!==editIndex&&samePlace(p,place)))return notify('Este local já está na rota.');
     const oldSaved=state.saved.find(p=>samePlace(p,old));
     if(oldSaved)state.saved=state.saved.filter(p=>!samePlace(p,old));
-    state.stops[editIndex]=place;
+    state.stops[editIndex]=withRememberedAccess(place,state.accesses);
     if(pendingFavorite&&!isFavorite(place))state.saved.push({...place,groupId:oldSaved?.groupId||''});
     cancelPicker();planChanged(true);persist();notify('Paragem atualizada.');
   }else{
     const save=pendingFavorite;
     if(!addPlace(place))return;
-    if(save&&!isFavorite(place))state.saved.push(place);
+    if(save&&!isFavorite(place))state.saved.push(withRememberedAccess(place,state.accesses));
     render();persist();cancelPicker();
   }
 };
@@ -180,13 +208,15 @@ function toggleFavorite(place){
 }
 function addPlace(place){
   if(busy)return false;
+  place=withRememberedAccess(place,state.accesses);
+  const wasDepot=changingDepot;
   if(changingDepot){state.depot={...place};changingDepot=false;$('change-depot').textContent='Alterar';$('search').placeholder='Loja, morada, código postal ou link do Google Maps';}
   else{
     if(state.stops.length>=25){notify('A rota já tem 25 paragens.');return false;}
     if(state.stops.some(p=>samePlace(p,place))){notify('Este local já está na rota.');return false;}
     state.stops.push({...place});
   }
-  closeResults();$('search').value='';planChanged(true);persist();notify('Local adicionado à rota. Use o coração para guardar a morada.');return true;
+  closeResults();$('search').value='';planChanged(true);persist();if(wasDepot)showRouteTop();else showStop(state.stops.length-1);notify('Local adicionado à rota. Use o coração para guardar a morada.');return true;
 }
 function planChanged(fit=false){
   clearedPlan=null;
@@ -232,7 +262,7 @@ function legHTML(leg){
 }
 function stopHTML(p,i,legs){
   const road=roadFor(p),failed=accessIssue===pointKey(p);
-  return `${legHTML(legs[i])}<article class="stop${route&&i<route.completed?' done':''}${failed?' needs-access':''}" draggable="true" data-stop-index="${i}"><div class="stop-main"><span class="number">${route&&i<route.completed?'✓':i+1}</span><div class="stop-text"><button class="stop-name" data-edit="${i}" aria-label="Editar ${escapeHTML(p.name)}">${escapeHTML(p.name)}</button><small>${escapeHTML(p.address)}${p.approximate?' · Pin aproximado':''}</small>${road&&road.offset>5?`<small class="access-note">Acesso pela estrada · ${Math.round(road.offset)} m do local</small>`:''}${failed?'<small class="access-error">Indique a entrada de viatura em «Acesso».</small>':''}</div></div><div class="stop-actions"><button class="move-button" data-up="${i}" aria-label="Subir ${escapeHTML(p.name)}" ${i===0?'disabled':''}>Subir</button><button class="move-button" data-down="${i}" aria-label="Descer ${escapeHTML(p.name)}" ${i===state.stops.length-1?'disabled':''}>Descer</button><button class="move-button" data-access="${i}" aria-label="Ajustar acesso de ${escapeHTML(p.name)}">Acesso</button><button class="heart" data-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="icon-button" data-remove="${i}" aria-label="Remover ${escapeHTML(p.name)}">×</button></div></article>`;
+  return `${legHTML(legs[i])}<article class="stop${route&&i<route.completed?' done':''}${failed?' needs-access':''}${selectedStop===pointKey(p)?' is-selected':''}" draggable="true" data-stop-index="${i}"><div class="stop-main"><span class="number">${route&&i<route.completed?'✓':i+1}</span><div class="stop-text"><button class="stop-name" data-edit="${i}" aria-label="Editar ${escapeHTML(p.name)}">${escapeHTML(p.name)}</button><small>${escapeHTML(p.address)}${p.approximate?' · Pin aproximado':''}</small>${road?`<small class="access-note">${road.manual?'Entrada memorizada':'Acesso memorizado'}${road.offset>5?' · '+Math.round(road.offset)+' m do local':''}</small>`:p.manualAccess?'<small class="access-note">Entrada memorizada</small>':''}${failed?'<small class="access-error">Indique a entrada de viatura em «Acesso».</small>':''}</div></div><div class="stop-actions"><button class="move-button" data-up="${i}" aria-label="Subir ${escapeHTML(p.name)}" ${i===0?'disabled':''}>Subir</button><button class="move-button" data-down="${i}" aria-label="Descer ${escapeHTML(p.name)}" ${i===state.stops.length-1?'disabled':''}>Descer</button><button class="move-button" data-access="${i}" aria-label="Ajustar acesso de ${escapeHTML(p.name)}">Acesso</button><button class="heart" data-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="icon-button" data-remove="${i}" aria-label="Remover ${escapeHTML(p.name)}">×</button></div></article>`;
 }
 function render(){
   const panel=document.querySelector('.route-panel'),scrollPosition=panel.scrollTop;
@@ -339,7 +369,11 @@ async function prepareRoadPoints(points){
     $('route-message').textContent=`A procurar acessos de viatura ${start+1}–${Math.min(start+8,missing.length)} de ${missing.length}…`;
     const data=await routingRequest('locate',roadAccessPayload(batch));
     if(!Array.isArray(data))throw new Error('Não foi possível verificar os acessos pela estrada. Tente novamente.');
-    batch.forEach((point,i)=>roadCache.set(accessKey(point),resolveRoadAccess(point,data[i])));
+    batch.forEach((point,i)=>{
+      const road=resolveRoadAccess(point,data[i]);roadCache.set(accessKey(point),road);
+      state.accesses=rememberAccess(state.accesses,point,road);
+    });
+    persist();
   }
   return points.map(p=>({...p,road:roadFor(p)}));
 }
@@ -380,6 +414,7 @@ async function calculate(reorder){
   clearTimeout(calculateTimer);cancelPicker();closeResults();setBusy(true);
   if(reorder)$('optimize').textContent='A otimizar…';
   route=null;render();
+  let calculated=false;
   try{
     accessIssue=null;
     const prepared=await prepareRoadPoints([state.depot,...state.stops]),depot=prepared[0];
@@ -404,9 +439,9 @@ async function calculate(reorder){
     const orderedLegs=legs.map(leg=>computed.get(leg.index));
     state.stops=stops.map(({road,...place})=>place);route={...totalTrip(orderedLegs,stops.length,state.service),legs:orderedLegs,completed:0};
     $('route-message').textContent=reorder?'Ordem sugerida pelos tempos de condução. Pode ajustar as paragens e cada trajeto.':'Rota calculada na ordem apresentada. As alterações recalculam o tempo total.';
-    render();drawMap(true);persist();void updateTollPrices(route);
+    calculated=true;render();drawMap(true);persist();void updateTollPrices(route);
   }catch(error){if(error.place){accessIssue=pointKey(error.place);map?.flyTo([error.place.lat,error.place.lon],16);}$('route-message').textContent=error.name==='TimeoutError'?'O serviço demorou demasiado. Tente calcular novamente.':error.message;notify($('route-message').textContent);}
-  finally{setBusy(false);}
+  finally{setBusy(false);if(calculated)showRouteTop();}
 }
 $('calculate').onclick=()=>calculate(false);$('optimize').onclick=()=>calculate(true);
 
@@ -530,7 +565,7 @@ function renderNavigation(){
   $('navigate').hidden=done;$('delivered').hidden=done;
   if(leg){$('navigate').href=navigationURL(leg);$('delivered').textContent=route.completed>=state.stops.length?'Cheguei à empresa':'Entregue · Próxima';}
 }
-$('delivered').onclick=()=>{if(route){route.completed++;render();}};
+$('delivered').onclick=()=>{if(route){route.completed++;render();if(route.completed>=route.legs.length)showRouteTop();}};
 $('roundtrip').checked=state.roundtrip;
 $('roundtrip').onchange=()=>{state.roundtrip=$('roundtrip').checked;planChanged();};
 $('service').value=state.service;
