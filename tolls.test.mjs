@@ -7,6 +7,13 @@ function encode(points){let oldLat=0,oldLon=0,out='';for(const p of points){cons
 function trace(points,gates=points.map((_,i)=>i)){return {shape:encode(points),edges:points.map((_,i)=>({toll:true,end_shape_index:i,...(gates.includes(i)?{end_node:{type:'toll_booth'}}:{})}))};}
 const outbound=priceTollTrace(trace([station('0137'),station('0121')]),catalog);
 const inbound=priceTollTrace(trace([station('0121'),station('0119')]),catalog);
+assert.deepEqual(priceTollTrace(trace([station('0133'),station('0119')]),catalog).cents,[860,1510,1945,2150],'CREP/A1 IC24 Sul is a distinct plaza from Grijó PV.');
+assert.deepEqual(priceTollTrace(trace([station('0119'),station('0133')]),catalog).cents,[860,1510,1945,2150]);
+const nonTolledExit=trace([station('0119'),station('0117')]);nonTolledExit.edges[1].toll=false;
+assert.deepEqual(priceTollTrace(nonTolledExit,catalog).cents,catalog.rates['0119>0117'],'An exit remains a toll crossing even if its approach lane is tagged toll=false.');
+const freeGantry=station('a25-albergaria');
+assert.deepEqual(priceTollTrace(trace([freeGantry,station('0114'),station('0119')]),catalog).cents,catalog.rates['0114>0119'],'The abolished A25 gantry does not shift A1 entry/exit pairing.');
+assert.deepEqual(priceTollTrace(trace([freeGantry]),catalog).cents,[0,0,0,0]);
 assert.deepEqual(outbound.cents,[390,680,875,970]);
 assert.deepEqual(inbound.cents,[515,900,1160,1285]);
 const total=totalTollPrices([outbound,inbound,{complete:true,cents:[0,0,0,0]}]);

@@ -1,6 +1,6 @@
 import {optimizeOrder} from './optimizer.mjs?v=6';
 import {fuelEstimate,totalEstimate,confirmedToll,tollForLegs} from './costs.mjs?v=11';
-import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=12';
+import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=13';
 import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=12';
 import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs?v=6';
 
@@ -230,7 +230,7 @@ function renderSummary(){
   $('manual-toll').hidden=tollFree||!route;
   $('retry-tolls').hidden=!route||pricing?.status!=='error';
   $('toll-breakdown').hidden=!pricing?.legs||!state.tollClass||tollFree;
-  $('toll-breakdown-list').innerHTML=(pricing?.legs||[]).map((price,i)=>`<div class="cost-line"><span>${escapeHTML(route.legs[i].from.name)} → ${escapeHTML(route.legs[i].to.name)}</span><strong>${price.complete?money(price.cents[Number(state.tollClass)-1]/100):'Não coberto'}</strong></div>`).join('');
+  $('toll-breakdown-list').innerHTML=(pricing?.legs||[]).map((price,i)=>`<div class="cost-line"><span>${escapeHTML(route.legs[i].from.name)} → ${escapeHTML(route.legs[i].to.name)}${!price.complete?`<small class="toll-issue">${escapeHTML(price.reason)}</small>`:''}</span><strong>${price.complete?money(price.cents[Number(state.tollClass)-1]/100):'Não coberto'}</strong></div>`).join('');
   const total=totalEstimate(fuel?.cost??null,toll);$('total-cost').textContent=total!==null?money(total):'—';
 }
 $('stop-list').onclick=event=>{
@@ -275,7 +275,7 @@ function routingRequest(endpoint,payload){
 async function updateTollPrices(target){
   target.tollPricing={status:'loading'};renderSummary();
   try{
-    tollCatalogPromise??=requestJSON('toll-data.json?v=12').catch(error=>{tollCatalogPromise=null;throw error;});
+    tollCatalogPromise??=requestJSON('toll-data.json?v=13').catch(error=>{tollCatalogPromise=null;throw error;});
     const catalog=await tollCatalogPromise;if(route!==target)return;
     const legs=[];
     for(const leg of target.legs){

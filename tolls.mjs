@@ -13,8 +13,9 @@ export function priceTollTrace(trace,catalog){
   const unavailable=reason=>({complete:false,cents:null,reason,charges:[]});
   if(!Array.isArray(trace?.edges)||!trace.edges.length)return unavailable('Não foi possível identificar as portagens deste trajeto.');
   let shape;try{shape=decodePolyline6(trace.shape);}catch{return unavailable('Traçado de portagens indisponível.');}
-  // Former electronic toll gantries remain on the map after charging ends.
-  const gates=trace.edges.filter((edge,i)=>/^toll_(booth|gantry)$/.test(edge.end_node?.type)&&[trace.edges[i-1],edge,trace.edges[i+1]].some(e=>e?.toll===true));
+  // Exit plazas may sit on non-tolled approach lanes: inspect every crossing.
+  // Obsolete gantries are skipped only when the local catalogue verifies them free.
+  const gates=trace.edges.filter(edge=>/^toll_(booth|gantry)$/.test(edge.end_node?.type));
   if(!gates.length)return unavailable('Há um troço com portagens sem preço identificado.');
   const cents=zero(),charges=[];let entry=null,previous=null;
   for(const gate of gates){
@@ -22,6 +23,7 @@ export function priceTollTrace(trace,catalog){
     if(!coordinate)return unavailable('Localização de portagem indisponível.');
     const station=identifyTollStation({lat:coordinate[1],lon:coordinate[0]},catalog.stations);
     if(!station)return unavailable('Este trajeto passa numa portagem ainda sem tarifa na tabela local.');
+    if(station.kind==='free')continue;
     // Several lanes/nodes at the same physical plaza are one crossing. Never
     // deduplicate separate visits to the same station later in a trip.
     let along=0;
@@ -35,7 +37,7 @@ export function priceTollTrace(trace,catalog){
     }else if(!entry){entry=station;}
     else{
       const fare=catalog.rates[entry.id+'>'+station.id];
-      if(entry.id===station.id||!Array.isArray(fare)||fare.length!==4)return unavailable('Este par de entradas e saídas ainda não tem tarifa verificada.');
+      if(entry.id===station.id||!Array.isArray(fare)||fare.length!==4)return unavailable(`Sem tarifa verificada: ${entry.name} → ${station.name}.`);
       charges.push({label:entry.name+' → '+station.name,cents:fare});entry=null;
     }
   }
