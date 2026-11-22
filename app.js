@@ -1,8 +1,8 @@
 import {optimizeOrder} from './optimizer.mjs?v=6';
-import {fuelEstimate,totalEstimate,confirmedToll,tollForLegs} from './costs.mjs?v=11';
+import {fuelEstimate,totalEstimate,tollForLegs} from './costs.mjs?v=11';
 import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=15';
 import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=12';
-import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs?v=6';
+import {findPlaces,googleLookupURL,googleMapsURL,resolveMapsLink,portugueseFeature} from './search.mjs?v=17';
 
 const $=id=>document.getElementById(id);
 const escapeHTML=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13,8 +13,8 @@ const defaultDepot={name:'Matisilva — Carnes Lda',address:'Zona Industrial · 
 const validPlace=p=>p&&typeof p.name==='string'&&typeof p.address==='string'&&Number.isFinite(p.lat)&&Math.abs(p.lat)<=90&&Number.isFinite(p.lon)&&Math.abs(p.lon)<=180;
 const positive=value=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
 const modeValue=value=>value==='avoid'?'avoid':'allow';
-const defaultGroups=[{id:'restaurants',name:'Restaurantes'},{id:'continentes',name:'Continentes'},{id:'pingo-doce',name:'Pingo Doce'}];
-let state={depot:defaultDepot,stops:[],saved:[],groups:defaultGroups,roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{},mapStyle:'street'};
+const defaultGroups=[{id:'restaurants',name:'Restaurantes'},{id:'continentes',name:'Continente'},{id:'pingo-doce',name:'Pingo Doce'}];
+let state={depot:defaultDepot,stops:[],saved:[],groups:defaultGroups,roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{},mapStyle:'street',theme:'light'};
 try{
   const data=JSON.parse(localStorage.getItem('maticaminhos-v1'));
   if(data)state={
@@ -25,9 +25,10 @@ try{
     roundtrip:data.roundtrip!==false,service:Number.isFinite(data.service)?Math.max(0,Math.min(120,data.service)):10,
     consumption:positive(data.consumption),fuelPrice:positive(data.fuelPrice),tollClass:/^[1-4]$/.test(data.tollClass)?String(data.tollClass):'',
     mode:modeValue(data.mode),overrides:Object.fromEntries(Object.entries(data.overrides||{}).filter(([,v])=>v==='allow'||v==='avoid')),
-    mapStyle:data.mapStyle==='satellite'?'satellite':'street'
+    mapStyle:data.mapStyle==='satellite'?'satellite':'street',theme:data.theme==='dark'?'dark':'light'
   };
 }catch{}
+state.groups=state.groups.map(g=>g.id==='continentes'&&g.name==='Continentes'?{...g,name:'Continente'}:g);
 state.saved=state.saved.map(p=>({...p,groupId:state.groups.some(g=>g.id===p.groupId)?p.groupId:''}));
 let selectedGroup='all',editingGroup=null;
 let route=null,busy=false,searching=false,changingDepot=false,pending=null,pendingMarker=null,pendingFavorite=false,toastTimer,calculateTimer,results=[],showingFavorites=false,draggedIndex=null;
@@ -43,6 +44,14 @@ const samePlace=(a,b)=>pointKey(a)===pointKey(b);
 const isFavorite=place=>state.saved.some(p=>samePlace(p,place));
 function notify(message){$('status').textContent=message;$('status').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('status').hidden=true,6500);}
 function persist(){try{localStorage.setItem('maticaminhos-v1',JSON.stringify(state));}catch{notify('Não foi possível guardar neste navegador. Exporte a lista nas opções.');}}
+function applyTheme(){
+  document.documentElement.dataset.theme=state.theme;
+  $('theme-button').textContent=state.theme==='dark'?'Modo claro':'Modo escuro';
+  $('theme-button').setAttribute('aria-pressed',String(state.theme==='dark'));
+  document.querySelector('meta[name="theme-color"]').content=state.theme==='dark'?'#242628':'#ed5732';
+}
+$('theme-button').onclick=()=>{state.theme=state.theme==='dark'?'light':'dark';applyTheme();persist();};
+applyTheme();
 function initializeMap(){
   if(!window.L){$('map').innerHTML='<p style="padding:70px 20px">O mapa não carregou. Atualize a página para tentar novamente. Pode continuar a pesquisar locais.</p>';return;}
   map=L.map('map',{scrollWheelZoom:true,zoomControl:false,maxZoom:21}).setView([state.depot.lat,state.depot.lon],11);
@@ -61,6 +70,7 @@ function initializeMap(){
 function setMapStyle(style,save=true){
   if(!map)return;
   state.mapStyle=style==='satellite'?'satellite':'street';tileErrors=0;
+  document.querySelector('.map-panel').dataset.mapStyle=state.mapStyle;
   if(state.mapStyle==='satellite'&&!satelliteTiles){
     satelliteTiles=L.tileLayer.wms('https://ortos.dgterritorio.gov.pt/wms/ortosat2023',{
       layers:'ortoSat2023-CorVerdadeira',format:'image/png',version:'1.1.1',transparent:true,
@@ -170,7 +180,7 @@ function toggleFavorite(place){
 }
 function addPlace(place){
   if(busy)return false;
-  if(changingDepot){state.depot={...place};changingDepot=false;$('change-depot').textContent='Alterar';$('search').placeholder='Loja, restaurante, morada ou código postal';}
+  if(changingDepot){state.depot={...place};changingDepot=false;$('change-depot').textContent='Alterar';$('search').placeholder='Loja, morada, código postal ou link do Google Maps';}
   else{
     if(state.stops.length>=25){notify('A rota já tem 25 paragens.');return false;}
     if(state.stops.some(p=>samePlace(p,place))){notify('Este local já está na rota.');return false;}
@@ -181,17 +191,17 @@ function addPlace(place){
 function planChanged(fit=false){
   clearedPlan=null;
   const recalculate=!!route;
-  route=null;$('toll-amount').value='';$('route-message').textContent=recalculate?'A atualizar a rota…':'Calcule a rota para atualizar os tempos.';render();drawMap(fit);persist();
+  route=null;$('route-message').textContent=recalculate?'A atualizar a rota…':'Calcule a rota para atualizar os tempos.';render();drawMap(fit);persist();
   if(recalculate){clearTimeout(calculateTimer);calculateTimer=setTimeout(()=>calculate(false),180);}
 }
 $('clear-route').onclick=()=>{
   if(busy||searching||!state.stops.length)return;
-  clearedPlan={stops:[...state.stops],overrides:{...state.overrides},route,tollClass:state.tollClass};
+  clearedPlan={stops:[...state.stops],overrides:{...state.overrides},route};
   clearTimeout(calculateTimer);calculateTimer=null;
   state.stops=[];state.overrides={};route=null;accessIssue=null;draggedIndex=null;
-  cancelPicker();closeResults();results=[];showingFavorites=false;changingDepot=false;
-  $('change-depot').textContent='Alterar';$('search').placeholder='Loja, restaurante, morada ou código postal';
-  $('search').value='';$('town').value='';$('toll-amount').value='';
+  cancelPicker();closeResults();results=[];changingDepot=false;
+  $('change-depot').textContent='Alterar';$('search').placeholder='Loja, morada, código postal ou link do Google Maps';
+  $('search').value='';$('town').value='';
   $('route-message').textContent='Rota limpa. As moradas guardadas foram mantidas.';
   render();drawMap(true);persist();notify('Rota limpa. Pode restaurá-la em «Restaurar rota».');
 };
@@ -199,8 +209,8 @@ $('undo-clear').onclick=()=>{
   if(busy||searching||!clearedPlan)return;
   const previous=clearedPlan;clearedPlan=null;
   state.stops=previous.stops;state.overrides=previous.overrides;
-  route=previous.route?{...previous.route,...totalTrip(previous.route.legs,state.stops.length,state.service),toll:previous.tollClass===state.tollClass?previous.route.toll:null}:null;
-  $('toll-amount').value=route?.toll??'';
+  route=previous.route?{...previous.route,...totalTrip(previous.route.legs,state.stops.length,state.service)}:null;
+
   $('route-message').textContent='Rota restaurada.';
   render();drawMap(true);persist();notify('Rota restaurada.');
   if(route&&(!route.tollPricing||route.tollPricing.status==='loading'))void updateTollPrices(route);
@@ -209,7 +219,7 @@ $('change-depot').onclick=()=>{
   if(busy)return;
   changingDepot=!changingDepot;cancelPicker();
   $('change-depot').textContent=changingDepot?'Cancelar':'Alterar';
-  $('search').placeholder=changingDepot?'Morada ou nome da empresa':'Loja, restaurante, morada ou código postal';
+  $('search').placeholder=changingDepot?'Morada ou nome da empresa':'Loja, morada, código postal ou link do Google Maps';
   $('search').focus();notify(changingDepot?'Procure o novo ponto de partida ou escolha no mapa.':'Partida mantida.');
 };
 $('depot-access').onclick=()=>beginAccessPicker(-1);
@@ -238,6 +248,7 @@ function render(){
   $('calculate').disabled=busy||searching||!hasStops;$('optimize').disabled=busy||searching||!hasStops;
   $('clear-route').disabled=busy||searching||!hasStops;
   $('undo-clear').hidden=!clearedPlan;$('undo-clear').disabled=busy||searching;
+  if(showingFavorites)renderResults(true);
   if(busy)for(const element of document.querySelectorAll('button,input,select'))element.disabled=true;
   renderSummary();renderNavigation();drawMap();panel.scrollTop=scrollPosition;
 }
@@ -250,14 +261,13 @@ function renderSummary(){
   $('fuel-cost').textContent=fuel?money(fuel.cost):'Preencher veículo';$('fuel-preview').textContent=fuel?money(fuel.cost)+' combustível':'—';
   const pricing=route?.tollPricing;
   const automatic=selectedTollPrice(pricing,state.tollClass);
-  const toll=route?tollForLegs(route.legs,route.toll??automatic):null;
+  const toll=route?tollForLegs(route.legs,automatic):null;
   const tollFree=!!route&&route.legs.length>0&&route.legs.every(leg=>leg.hasToll===false);
   $('toll-cost').textContent=toll!==null?money(toll):!route?'Calcule a rota':!state.tollClass?'Escolha a classe':pricing?.status==='loading'?'A calcular…':'Tarifa não coberta';
-  $('toll-status').textContent=!route?'Calcule a rota para ver os custos.':tollFree?'O percurso calculado não inclui portagens.':route.toll!==null?'Valor de portagens indicado por si para esta viagem.':pricing?.status==='loading'?'A identificar as portagens do percurso…':pricing?.complete?`${state.tollClass?'Classe '+state.tollClass+' · ': 'Escolha a classe da viatura. '}Tabela estática de ${pricing.effectiveFrom}. Sem descontos pessoais.`:pricing?.status==='error'?'Não foi possível consultar as portagens. Tente novamente.':`${pricing?.missing||1} trajeto(s) com tarifa ainda não coberta. Indique o valor se o souber.`;
+  $('toll-status').textContent=!route?'Calcule a rota para ver os custos.':tollFree?'O percurso calculado não inclui portagens.':pricing?.status==='loading'?'A identificar as portagens do percurso…':pricing?.complete?`${state.tollClass?'Classe '+state.tollClass+' · ': 'Escolha a classe da viatura. '}Tabela estática de ${pricing.effectiveFrom}. Sem descontos pessoais.`:pricing?.status==='error'?'Não foi possível consultar as portagens. Tente novamente.':`${pricing?.missing||1} trajeto(s) com tarifa ainda não coberta.`;
   $('trip-toll-class').value=state.tollClass;
   $('trip-toll-class-label').hidden=tollFree;
-  $('toll-amount').disabled=busy||!route||tollFree;
-  $('manual-toll').hidden=tollFree||!route;
+
   $('retry-tolls').hidden=!route||pricing?.status!=='error';
   $('toll-breakdown').hidden=!pricing?.legs||!state.tollClass||tollFree;
   $('toll-breakdown-list').innerHTML=(pricing?.legs||[]).map((price,i)=>`<div class="cost-line"><span>${escapeHTML(route.legs[i].from.name)} → ${escapeHTML(route.legs[i].to.name)}${!price.complete?`<small class="toll-issue">${escapeHTML(price.reason)}</small>`:''}</span><strong>${price.complete?money(price.cents[Number(state.tollClass)-1]/100):'Não coberto'}</strong></div>`).join('');
@@ -369,7 +379,7 @@ async function calculate(reorder){
   if(busy||searching||!state.stops.length)return;
   clearTimeout(calculateTimer);cancelPicker();closeResults();setBusy(true);
   if(reorder)$('optimize').textContent='A otimizar…';
-  route=null;$('toll-amount').value='';render();
+  route=null;render();
   try{
     accessIssue=null;
     const prepared=await prepareRoadPoints([state.depot,...state.stops]),depot=prepared[0];
@@ -392,7 +402,7 @@ async function calculate(reorder){
       for(const result of parseTrip(data,batch)){computed.set(result.index,result);legCache.set(routeCacheKey(result),result);}
     }
     const orderedLegs=legs.map(leg=>computed.get(leg.index));
-    state.stops=stops.map(({road,...place})=>place);route={...totalTrip(orderedLegs,stops.length,state.service),legs:orderedLegs,completed:0,toll:null};
+    state.stops=stops.map(({road,...place})=>place);route={...totalTrip(orderedLegs,stops.length,state.service),legs:orderedLegs,completed:0};
     $('route-message').textContent=reorder?'Ordem sugerida pelos tempos de condução. Pode ajustar as paragens e cada trajeto.':'Rota calculada na ordem apresentada. As alterações recalculam o tempo total.';
     render();drawMap(true);persist();void updateTollPrices(route);
   }catch(error){if(error.place){accessIssue=pointKey(error.place);map?.flyTo([error.place.lat,error.place.lon],16);}$('route-message').textContent=error.name==='TimeoutError'?'O serviço demorou demasiado. Tente calcular novamente.':error.message;notify($('route-message').textContent);}
@@ -410,24 +420,34 @@ async function photonRequest(endpoint,params){
   try{sessionStorage.setItem(key,JSON.stringify(data));}catch{}
   return data;
 }
+async function importMapsLink(raw){
+  const key='maps-link-v1:'+googleMapsURL(raw).href;
+  try{
+    const cached=JSON.parse(sessionStorage.getItem(key));
+    if(cached&&Date.now()-cached.time<86400000&&Number.isFinite(cached.place?.lat)&&Number.isFinite(cached.place?.lon)&&typeof cached.place.name==='string')return cached.place;
+  }catch{}
+  const place=await resolveMapsLink(raw,requestJSON);
+  try{sessionStorage.setItem(key,JSON.stringify({time:Date.now(),place}));}catch{}
+  return place;
+}
 $('search-form').onsubmit=async event=>{
   event.preventDefault();if(busy||searching)return;
   const raw=$('search').value.trim();if(raw.length<3)return notify('Escreva um nome, uma morada ou um código postal.');
   const coord=raw.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
   if(coord){const lat=Number(coord[1]),lon=Number(coord[2]);if(Math.abs(lat)>90||Math.abs(lon)>180)return notify('Coordenadas inválidas.');beginPicker({lat,lon,name:'',address:raw});return;}
-  if(raw.includes('maps.app.goo.gl'))return notify('Abra esse link e copie a morada ou o link completo da barra de endereço do Google Maps.');
-  const imported=parseMapsCoordinates(raw);
-  if(Date.now()-lastSearch<1500)return;lastSearch=Date.now();searching=true;showingFavorites=false;
+  const mapsLink=googleMapsURL(raw);
+  if(/https?:\/\//i.test(raw)&&!mapsLink)return notify('Cole um link válido de um único local do Google Maps, ou escreva a morada.');
+  if(Date.now()-lastSearch<1500)return;lastSearch=Date.now();searching=true;
   renderSavedTools();$('results-panel').hidden=false;$('results-title').textContent='A procurar…';$('results').replaceChildren();$('search-button').disabled=true;render();
   try{
-    if(imported){
+    if(mapsLink){
+      $('results-title').textContent='A abrir o link do Google Maps…';
+      const imported=await importMapsLink(raw);
       const data=await photonRequest('reverse',new URLSearchParams({lat:imported.lat,lon:imported.lon,radius:'1',limit:'1'}));
       const feature=(data.features||[])[0];
       if(!portugueseFeature(feature))throw new Error('Este local não foi confirmado em Portugal.');
-      let decoded;try{decoded=decodeURIComponent(raw);}catch{decoded=raw;}
-      const name=(decoded.match(/\/place\/([^/]+)/)?.[1]||'Local do Google Maps').replaceAll('+',' ');
       const p=feature.properties;
-      beginPicker({...imported,name,address:[p.street,p.housenumber,p.postcode,p.city||p.town||p.village,'Portugal'].filter(Boolean).join(', '),approximate:true});
+      beginPicker({...imported,name:imported.name||'Local do Google Maps',address:[p.street,p.housenumber,p.postcode,p.city||p.town||p.village,'Portugal'].filter(Boolean).join(', '),note:imported.approximate?'Localização aproximada. Confirme o pin na entrada de entrega.':'Local do Google Maps. Confirme a entrada de entrega antes de adicionar.'});
       return;
     }
     const found=await findPlaces(normalizeQuery(raw),$('town').value,state.depot,photonRequest);
@@ -436,26 +456,36 @@ $('search-form').onsubmit=async event=>{
   }catch(error){$('results-title').textContent='Não foi possível localizar';$('results').innerHTML=`<p class="results-empty">${escapeHTML(error.message||'Tente novamente ou escolha o ponto no mapa.')}</p>${lookupHTML()}`;}
   finally{searching=false;$('search-button').disabled=false;render();}
 };
-function lookupHTML(){const query=$('search').value.trim();return query?`<div class="lookup-help"><span>Falta um estabelecimento?</span><a href="${escapeHTML(googleLookupURL(query,$('town').value))}" target="_blank" rel="noopener">Procurar no Google Maps</a><small>Depois cole aqui a morada ou o link completo com coordenadas.</small></div>`:'';}
-function resultPlaces(){return showingFavorites?state.saved.filter(p=>selectedGroup==='all'||(p.groupId||'')===(selectedGroup==='none'?'':selectedGroup)):results;}
+function lookupHTML(){
+  const query=$('search').value.trim(),link=googleMapsURL(query);
+  if(link)return `<div class="lookup-help"><a href="${escapeHTML(link.href)}" target="_blank" rel="noopener">Abrir o local no Google Maps</a><small>Se o link estiver indisponível, copie a morada ou escolha a entrada no mapa.</small></div>`;
+  return query?`<div class="lookup-help"><span>Falta um estabelecimento?</span><a href="${escapeHTML(googleLookupURL(query,$('town').value))}" target="_blank" rel="noopener">Procurar no Google Maps</a><small>Depois cole aqui a morada ou o link partilhado pelo Google Maps.</small></div>`:'';
+}
+function resultPlaces(saved=false){return saved?state.saved.filter(p=>selectedGroup==='all'||(p.groupId||'')===(selectedGroup==='none'?'':selectedGroup)):results;}
 function groupOptions(selected){return `<option value=""${!selected?' selected':''}>Sem grupo</option>`+state.groups.map(g=>`<option value="${escapeHTML(g.id)}"${g.id===selected?' selected':''}>${escapeHTML(g.name)}</option>`).join('');}
 function renderSavedTools(){
-  $('saved-tools').hidden=!showingFavorites;
-  if(!showingFavorites){$('group-editor').hidden=true;return;}
+
   if(!['all','none'].includes(selectedGroup)&&!state.groups.some(g=>g.id===selectedGroup))selectedGroup='all';
   $('group-filter').innerHTML=`<option value="all">Todas (${state.saved.length})</option><option value="none">Sem grupo (${state.saved.filter(p=>!p.groupId).length})</option>`+state.groups.map(g=>`<option value="${escapeHTML(g.id)}">${escapeHTML(g.name)} (${state.saved.filter(p=>p.groupId===g.id).length})</option>`).join('');
   $('group-filter').value=selectedGroup;
   $('rename-group').hidden=['all','none'].includes(selectedGroup);
 }
-function renderResults(){
-  renderSavedTools();
-  const places=resultPlaces();
-  $('results-title').textContent=showingFavorites?'Moradas guardadas':'Escolha o local certo';
-  const entries=places.length?places.map((p,i)=>`<div class="result${showingFavorites?' saved-result':''}"><button class="result-body" data-preview="${i}"><strong>${escapeHTML(p.name)}</strong><small>${escapeHTML(p.address)}${p.note?' · '+escapeHTML(p.note):p.approximate?' · Zona aproximada: confirme o pin':''}</small>${p.source?'<small>Localização publicada pelo estabelecimento</small>':''}</button><button class="heart" data-result-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="add-result" data-result-add="${i}">${p.approximate?'No mapa':'Adicionar'}</button>${showingFavorites?`<label class="address-group">Grupo<select data-address-group="${i}" aria-label="Grupo de ${escapeHTML(p.name)}">${groupOptions(p.groupId)}</select></label>`:''}</div>`).join(''):`<p class="results-empty">${showingFavorites?(state.saved.length?'Ainda não há moradas neste grupo. Escolha «Todas» para organizar as suas moradas.':'Ainda não tem moradas guardadas. Toque no coração para guardar uma morada.'):'Sem correspondência em Portugal. Indique a rua e a cidade/vila, ou escolha o ponto no mapa.'}</p>`;
-  $('results').innerHTML=entries+(showingFavorites?'':lookupHTML());
+function renderResults(saved=false){
+  if(saved)renderSavedTools();
+  const places=resultPlaces(saved);
+  if(!saved)$('results-title').textContent='Escolha o local certo';
+  const entries=places.length?places.map((p,i)=>`<div class="result${saved?' saved-result':''}"><button class="result-body" data-preview="${i}"><strong>${escapeHTML(p.name)}</strong><small>${escapeHTML(p.address)}${p.note?' · '+escapeHTML(p.note):p.approximate?' · Zona aproximada: confirme o pin':''}</small>${p.source?'<small>Localização publicada pelo estabelecimento</small>':''}</button><button class="heart" data-result-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="add-result" data-result-add="${i}">${p.approximate?'No mapa':'Adicionar'}</button>${saved?`<label class="address-group">Grupo<select data-address-group="${i}" aria-label="Grupo de ${escapeHTML(p.name)}">${groupOptions(p.groupId)}</select></label>`:''}</div>`).join(''):`<p class="results-empty">${saved?(state.saved.length?'Ainda não há moradas neste grupo. Escolha «Todas» para organizar as suas moradas.':'Ainda não tem moradas guardadas. Toque no coração para guardar uma morada.'):'Sem correspondência em Portugal. Indique a rua e a cidade/vila, ou escolha o ponto no mapa.'}</p>`;
+  $(saved?'saved-results':'results').innerHTML=entries+(saved?'':lookupHTML());
 }
-$('saved-button').onclick=()=>{showingFavorites=true;$('group-editor').hidden=true;$('results-panel').hidden=false;renderResults();};
-$('group-filter').onchange=()=>{selectedGroup=$('group-filter').value;$('group-editor').hidden=true;renderResults();};
+function toggleSaved(open=!showingFavorites){
+  showingFavorites=open;$('saved-panel').hidden=!open;
+  document.querySelector('.workspace').classList.toggle('saved-open',open);
+  $('saved-button').setAttribute('aria-expanded',String(open));
+  if(open){closeResults();renderResults(true);}else $('group-editor').hidden=true;
+}
+$('saved-button').onclick=()=>toggleSaved();
+$('close-saved').onclick=()=>{toggleSaved(false);$('saved-button').focus();};
+$('group-filter').onchange=()=>{selectedGroup=$('group-filter').value;$('group-editor').hidden=true;renderResults(true);};
 function openGroupEditor(id){
   editingGroup=id;$('group-name').value=state.groups.find(g=>g.id===id)?.name||'';
   $('group-editor-title').textContent=id?'Renomear grupo':'Novo grupo';$('group-error').textContent='';$('group-editor').hidden=false;$('group-name').focus();
@@ -473,21 +503,23 @@ $('group-editor').onsubmit=event=>{
     if(state.groups.length>=100){$('group-error').textContent='Já tem 100 grupos.';return;}
     const group={id:crypto.randomUUID(),name};state.groups.push(group);selectedGroup='all';
   }
-  $('group-editor').hidden=true;persist();renderResults();notify('Grupo guardado. Pode escolhê-lo no campo «Grupo» de cada morada.');
+  $('group-editor').hidden=true;persist();renderResults(true);notify('Grupo guardado. Pode escolhê-lo no campo «Grupo» de cada morada.');
 };
-$('results').onchange=event=>{
+$('saved-results').onchange=event=>{
   if(busy)return;const select=event.target.closest('[data-address-group]');if(!select||!showingFavorites)return;
-  const place=resultPlaces()[Number(select.dataset.addressGroup)];if(!place)return;
-  place.groupId=state.groups.some(g=>g.id===select.value)?select.value:'';persist();renderResults();notify('Grupo da morada atualizado.');
+  const place=resultPlaces(true)[Number(select.dataset.addressGroup)];if(!place)return;
+  place.groupId=state.groups.some(g=>g.id===select.value)?select.value:'';persist();renderResults(true);notify('Grupo da morada atualizado.');
 };
-$('results').onclick=event=>{
-  if(busy)return;const places=resultPlaces();
+function resultClick(event,saved=false){
+  if(busy)return;const places=resultPlaces(saved);
   const preview=event.target.closest('[data-preview]'),heart=event.target.closest('[data-result-heart]'),add=event.target.closest('[data-result-add]');
   if(preview)beginPicker(places[Number(preview.dataset.preview)]);
   if(heart){const place=places[Number(heart.dataset.resultHeart)];if(place.approximate&&!isFavorite(place)){beginPicker(place);pendingFavorite=true;$('picker-heart').textContent='♥';$('picker-heart').setAttribute('aria-pressed','true');}else toggleFavorite(place);}
   if(add){const place=places[Number(add.dataset.resultAdd)];if(place.approximate)beginPicker(place);else addPlace(place);}
 };
-document.addEventListener('keydown',event=>{if(event.key==='Escape'){closeResults();cancelPicker();}});
+$('results').onclick=event=>resultClick(event);
+$('saved-results').onclick=event=>resultClick(event,true);
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){closeResults();cancelPicker();if(showingFavorites){toggleSaved(false);$('saved-button').focus();}}});
 
 function navigationURL(leg){const from=leg.from.road||roadFor(leg.from)||leg.from,to=leg.to.road||roadFor(leg.to)||leg.to;const params=new URLSearchParams({api:'1',origin:`${from.lat},${from.lon}`,destination:`${to.lat},${to.lon}`,travelmode:'driving'});if(leg.mode==='avoid')params.set('avoid','tolls');return 'https://www.google.com/maps/dir/?'+params;}
 function renderNavigation(){
@@ -505,12 +537,11 @@ $('service').value=state.service;
 function updateService(){state.service=Math.max(0,Math.min(120,Number($('service').value)||0));if(route)Object.assign(route,totalTrip(route.legs,state.stops.length,state.service));persist();renderSummary();}
 $('service').oninput=updateService;
 $('service').onchange=()=>{updateService();$('service').value=state.service;};
-$('toll-amount').oninput=()=>{if(route){route.toll=$('toll-amount').validity.valid?confirmedToll($('toll-amount').value):null;renderSummary();}};
 $('settings-button').onclick=()=>$('settings-dialog').showModal();$('close-settings').onclick=()=>$('settings-dialog').close();
 for(const [id,key] of [['consumption','consumption'],['fuel-price','fuelPrice']]){
   $(id).value=state[key]??'';$(id).oninput=()=>{state[key]=$(id).validity.valid?positive($(id).value):null;persist();renderSummary();};
 }
-function changeTollClass(value){state.tollClass=value;$('toll-class').value=value;if(route){route.toll=null;$('toll-amount').value='';}persist();renderSummary();}
+function changeTollClass(value){state.tollClass=value;$('toll-class').value=value;persist();renderSummary();}
 $('toll-class').value=state.tollClass;
 $('toll-class').onchange=()=>changeTollClass($('toll-class').value);
 $('trip-toll-class').onchange=()=>changeTollClass($('trip-toll-class').value);

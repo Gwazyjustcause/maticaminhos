@@ -79,11 +79,49 @@ export async function findPlaces(raw,town,depot,fetchPhoton){
   return {places:unique,parsed,context};
 }
 export function googleLookupURL(raw,town=''){return 'https://www.google.com/maps/search/?'+new URLSearchParams({api:'1',query:[expandStreet(raw),town,'Portugal'].filter(Boolean).join(', ')});}
+const googleDomains=new Set(['com','pt','es','fr','de','co.uk','it','nl','be','ch','at','ie','lu','pl','com.br','ca','com.au','co.in','co.jp']);
+export function googleMapsURL(raw){
+  // Google/WhatsApp shares can include the business name and punctuation around the URL.
+  const links=String(raw).match(/https?:\/\/[^\s<>"\u201c\u201d]+/gi)||[];
+  if(links.length!==1)return null;
+  let candidate=links[0].replace(/[.,;]+$/,'');
+  for(const [open,close] of [['(',')'],['[',']'],['{','}']]){
+    while(candidate.endsWith(close)&&candidate.split(close).length>candidate.split(open).length)candidate=candidate.slice(0,-1);
+  }
+  let url;try{url=new URL(candidate);}catch{return null;}
+  if(url.protocol!=='https:'||url.username||url.password||url.port)return null;
+  const host=url.hostname,path=url.pathname;
+  if(host==='maps.app.goo.gl'&&/^\/[^/]+\/?$/.test(path))return url;
+  if(host==='goo.gl'&&/^\/maps\/[^/]+\/?$/.test(path))return url;
+  if(host==='g.co'&&/^\/maps\/[^/]+\/?$/.test(path))return url;
+  if(['g.page','share.google'].includes(host)&&path!=='/')return url;
+  const google=host.match(/^(?:(www|maps)\.)?google\.(.+)$/);
+  return google&&googleDomains.has(google[2])&&(google[1]==='maps'||/^\/maps(?:\/|$)/.test(path))?url:null;
+}
+const validCoordinates=(lat,lon)=>Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
+const coordinatePair=value=>String(value||'').match(/^(?:loc:)?(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)(?:\s*\([^)]*\))?$/i);
 export function parseMapsCoordinates(raw){
-  let url;try{url=new URL(raw);}catch{return null;}
-  if(url.protocol!=='https:'||!['google.com','www.google.com','maps.google.com','google.pt','www.google.pt','maps.google.pt','www.google.es','www.google.fr','www.google.de','www.google.co.uk'].includes(url.hostname))return null;
-  let text;try{text=decodeURIComponent(raw);}catch{text=raw;}
-  const exact=text.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)||text.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  const url=googleMapsURL(raw);if(!url||!/^(?:(?:www|maps)\.)?google\./.test(url.hostname))return null;
+  let text;try{text=decodeURIComponent(url.href);}catch{text=url.href;}
+  // A camera's @lat,lon is not necessarily the business pin: prefer the place data.
+  let exact=text.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+  if(!exact)for(const key of ['destination','query','q','ll']){exact=coordinatePair(url.searchParams.get(key));if(exact)break;}
+  if(!exact)try{exact=coordinatePair(decodeURIComponent(url.pathname.match(/^\/maps\/(?:search|place)\/([^/]+)/)?.[1]||''));}catch{}
   const match=exact||text.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
-  if(!match)return null;const lat=Number(match[1]),lon=Number(match[2]);return Math.abs(lat)<=90&&Math.abs(lon)<=180?{lat,lon,approximate:!exact}:null;
+  if(!match)return null;const lat=Number(match[1]),lon=Number(match[2]);return validCoordinates(lat,lon)?{lat,lon,approximate:!exact}:null;
+}
+export async function resolveMapsLink(raw,fetchJSON){
+  const url=googleMapsURL(raw);
+  if(!url)throw new Error('Cole um link válido de um local do Google Maps.');
+  // A route contains several pins; never accidentally import the first origin as a delivery.
+  if(/^\/maps\/dir(?:\/|$)/.test(url.pathname)||url.searchParams.has('waypoints'))throw new Error('Este link é de uma rota. Partilhe o link de um único local no Google Maps.');
+  const coordinates=parseMapsCoordinates(url.href);
+  let pathName='';try{pathName=decodeURIComponent(url.pathname.match(/\/place\/([^/]+)/)?.[1]||'').replaceAll('+',' ');}catch{}
+  if(coordinates&&!coordinates.approximate)return {...coordinates,name:coordinatePair(pathName)?'':pathName};
+  let data;
+  try{data=await fetchJSON('https://mapu.retiolus.net/unshortener?'+new URLSearchParams({link:url.href}));}
+  catch{throw new Error('Não foi possível abrir o link agora. Tente novamente ou cole a morada do local.');}
+  if(data?.points?.length>1)throw new Error('Este link contém vários locais. Partilhe o link de um único local no Google Maps.');
+  if(!validCoordinates(data?.lat,data?.long))throw new Error('O link não devolveu uma localização válida. Cole a morada ou escolha o ponto no mapa.');
+  return {lat:data.lat,lon:data.long,name:typeof data.name==='string'?data.name.trim().slice(0,120):pathName,approximate:data.nominatim===true||data.approximate===true};
 }

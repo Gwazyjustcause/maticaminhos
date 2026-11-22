@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {parseSearch,expandStreet,portugueseFeature,matchesFeature,catalogMatches,findPlaces,parseMapsCoordinates} from './search.mjs';
+import {parseSearch,expandStreet,portugueseFeature,matchesFeature,catalogMatches,findPlaces,parseMapsCoordinates,googleMapsURL,resolveMapsLink} from './search.mjs';
 const feature=(properties,coordinates=[-7.9054,40.6122])=>({type:'Feature',properties:{countrycode:'PT',...properties},geometry:{type:'Point',coordinates}});
 assert.equal(expandStreet('R. Bela Vista'),'Rua Bela Vista');
 let parsed=parseSearch('R. Bela Vista, São João de Lourosa');
@@ -37,4 +37,34 @@ const foreign=await findPlaces('Paris','',depot,async()=>({features:[feature({na
 const imported=parseMapsCoordinates('https://www.google.com/maps/place/Test/@40,-8,14z/data=!3d40.2637622!4d-8.2775141');assert.equal(imported.lat,40.2637622);assert.equal(imported.lon,-8.2775141);
 assert.equal(parseMapsCoordinates('https://google.com.evil.test/maps/@40,-8,14z'),null);
 assert.equal(parseMapsCoordinates('https://www.google.com/maps?q=40.2,-8.3').lat,40.2);
+assert.equal(parseMapsCoordinates('https://www.google.pt/maps/search/?api=1&query=40.2%2C-8.3').lon,-8.3);
+assert.equal(parseMapsCoordinates('https://maps.google.com/?q=loc:40.2,-8.3%20(Entrega)').lat,40.2);
+assert.equal(parseMapsCoordinates('https://www.google.com/maps/place/40.2%2C-8.3').lon,-8.3);
+assert.equal(parseMapsCoordinates('https://www.google.com/maps/place/%ZZ'),null);
+assert.equal(parseMapsCoordinates('https://www.google.com/maps?q=140,-8'),null);
+const shortLink='https://maps.app.goo.gl/79GD41CVLRfi74Ho8';
+assert.equal(googleMapsURL(`Matisilva — Carnes Lda\n(${shortLink})`).href,shortLink);
+for(const invalid of ['https://maps.app.goo.gl.evil.test/abc','https://google.com.evil.test/maps/place/Test','https://google.com/search?q=test','https://user:secret@google.com/maps/place/Test','https://maps.app.goo.gl:8080/abc','http://maps.app.goo.gl/abc',`${shortLink} https://example.org`])assert.equal(googleMapsURL(invalid),null,invalid);
+for(const link of ['https://goo.gl/maps/abc','https://g.co/maps/abc','https://g.page/matisilva?share','https://share.google/abc'])assert.ok(googleMapsURL(link));
+let resolutions=0;
+const resolve=async url=>{
+  resolutions++;assert.equal(new URL(url).origin,'https://mapu.retiolus.net');
+  assert.equal(new URL(url).searchParams.get('link'),shortLink);
+  return {lat:40.1299257,long:-8.5240277,name:'Matisilva - Carnes Lda',nominatim:false};
+};
+const company=await resolveMapsLink(`Matisilva\n${shortLink}`,resolve);
+assert.deepEqual(company,{lat:40.1299257,lon:-8.5240277,name:'Matisilva - Carnes Lda',approximate:false});
+assert.equal(resolutions,1);
+const noNetwork=()=>{throw new Error('Direct coordinates must not call the resolver.');};
+assert.equal((await resolveMapsLink('https://www.google.com/maps/place/Test/@40,-8,14z/data=!3d40.2!4d-8.3',noNetwork)).lat,40.2);
+// A camera centre is never silently accepted as the place's location.
+assert.equal((await resolveMapsLink('https://www.google.com/maps/place/Test/@40,-8,14z',async()=>({lat:40.25,long:-8.4,name:'Test',nominatim:true}))).lat,40.25);
+assert.equal((await resolveMapsLink(shortLink,async()=>({lat:40,long:-8,nominatim:true}))).approximate,true);
+await assert.rejects(()=>resolveMapsLink(shortLink,async()=>({lat:NaN,long:-8})),/localização válida/);
+await assert.rejects(()=>resolveMapsLink(shortLink,async()=>({lat:'40',long:-8})),/localização válida/);
+await assert.rejects(()=>resolveMapsLink(shortLink,async()=>({lat:91,long:0})),/localização válida/);
+await assert.rejects(()=>resolveMapsLink(shortLink,async()=>{throw new Error('Unavailable');}),/Tente novamente/);
+await assert.rejects(()=>resolveMapsLink('https://www.google.com/maps/dir/?api=1&origin=40,-8&destination=41,-9',noNetwork),/link é de uma rota/);
+await assert.rejects(()=>resolveMapsLink(shortLink,async()=>({points:[{},{}],lat:40,long:-8})),/vários locais/);
 console.log('Passed: Portugal-only results, street abbreviations, town scoping, wrong-street/house rejection, verified restaurant listing, explicit locality fallback, and Google coordinate links.');
+console.log('Passed: short/shared Google links, encoded coordinates, host validation, free resolver, camera-centre correction, invalid responses, outages, and multi-stop rejection.');
