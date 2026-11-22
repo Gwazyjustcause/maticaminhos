@@ -10,7 +10,20 @@ export function routeBatches(legs,max=6){
   return batches;
 }
 export function costing(mode){return {auto:{use_tolls:mode==='avoid'?0:0.5,...(mode==='avoid'?{exclude_tolls:true}:{})}};}
-export function routePayload(batch){return {locations:[batch.legs[0].from,...batch.legs.map(leg=>leg.to)].map(p=>({lat:p.lat,lon:p.lon,type:'break'})),costing:'auto',costing_options:costing(batch.mode),directions_type:'none',units:'kilometers'};}
+const validCoordinate=p=>p&&Number.isFinite(p.lat)&&Number.isFinite(p.lon)&&Math.abs(p.lat)<=90&&Math.abs(p.lon)<=180;
+export function distanceMetres(a,b){const rad=x=>x*Math.PI/180,dLat=rad(a.lat-b.lat),dLon=rad(a.lon-b.lon);return 12742000*Math.asin(Math.min(1,Math.sqrt(Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2)));}
+export function accessKey(p){return pointKey(p)+'|'+(validCoordinate(p.manualAccess)?pointKey(p.manualAccess):'auto');}
+export function roadAccessPayload(points){return {locations:points.map(p=>({...validCoordinate(p.manualAccess)?{lat:p.manualAccess.lat,lon:p.manualAccess.lon}:{lat:p.lat,lon:p.lon},radius:100,search_cutoff:500,minimum_reachability:50,search_filter:{max_road_class:'trunk',exclude_ramp:true,exclude_ferry:true}})),costing:'auto',verbose:false};}
+export function resolveRoadAccess(point,result){
+  const manual=validCoordinate(point.manualAccess),input=manual?point.manualAccess:point;
+  const fail=()=>{const error=new Error(`Não foi encontrado um acesso de viatura próximo de «${point.name}». Use «Acesso» nessa paragem para indicar a entrada pela estrada.`);error.place=point;return error;};
+  if(manual&&distanceMetres(point,input)>1000)throw fail();
+  const candidates=(result?.edges||[]).map(edge=>({lat:edge.correlated_lat,lon:edge.correlated_lon})).filter(validCoordinate).map(p=>({...p,distance:distanceMetres(input,p)})).filter(p=>p.distance<=(manual?100:300)).sort((a,b)=>a.distance-b.distance);
+  if(!candidates.length)throw fail();
+  const nearest=candidates[0];return {lat:nearest.lat,lon:nearest.lon,offset:distanceMetres(point,nearest),manual};
+}
+export function routingLocation(p){const road=validCoordinate(p.road)?p.road:null;return {lat:road?.lat??p.lat,lon:road?.lon??p.lon,type:'break',radius:road?30:100,search_cutoff:road?75:500,minimum_reachability:50,search_filter:{max_road_class:'trunk',exclude_ramp:true,exclude_ferry:true}};}
+export function routePayload(batch){return {locations:[batch.legs[0].from,...batch.legs.map(leg=>leg.to)].map(routingLocation),costing:'auto',costing_options:costing(batch.mode),directions_type:'none',units:'kilometers'};}
 export function decodePolyline6(encoded){
   if(typeof encoded!=='string'||!encoded.length)throw new Error('O serviço não devolveu o traçado do percurso.');
   const points=[];let index=0,lat=0,lon=0;

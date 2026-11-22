@@ -6,7 +6,7 @@ Source: `Gwazyjustcause/maticaminhos`. Static site on GitHub Pages, with no pack
 
 ## Development
 
-Use Node.js 20+. `npm run dev` serves http://127.0.0.1:4173. `npm run check` checks syntax. `npm test` covers route optimization, costs, per-leg toll preferences, route validation, postcodes, and whole-trip time. `npm run build` copies static files into ignored `dist/`. `npm run test:live` checks a real Matisilva–Leiria trip with tolls allowed and avoided; this makes two public routing requests and is deliberately separate from normal tests.
+Use Node.js 20+. `npm run dev` serves http://127.0.0.1:4173. `npm run check` checks syntax. `npm test` covers route optimization, costs, road access, per-leg toll preferences, route validation, postcodes, and whole-trip time. `npm run build` copies static files into ignored `dist/`. `npm run test:live` checks a real Matisilva–Leiria trip with tolls allowed and avoided. `npm run test:access` checks restaurant/building pins through road lookup, matrix optimization, and route geometry. Live checks make public routing requests and are deliberately separate from normal tests.
 
 ## Driver workflow
 
@@ -23,6 +23,14 @@ Adding a stop does **not** add it to favourites. A heart explicitly toggles favo
 The main **Rota mais rápida** button suggests a visiting order from driving-time matrices and a heuristic solver, then calculates and draws that route in one action. It also works with a single stop. It does not guarantee the global optimum or account for live traffic. **Manter ordem** calculates the displayed order instead. Move stops with Subir/Descer on any device, or drag a stop on desktop. Clicking a stop name lets the driver rename it or move its entrance. After calculating a route, changes to order, stop locations, return, or toll preferences recalculate its durations and map geometry. Delivery time updates the total without another routing request.
 
 Whole-trip duration includes all driving legs, service time at every delivery, and return to the depot if selected. The interface focuses on route planning and does not ask for a date or departure time. Google Maps navigation opens the next directed leg with its toll preference; it may choose different roads and change the estimate.
+
+## Restaurant pins and road access
+
+Business/search pins remain at their original coordinates. Before matrix optimization or route calculation, a batched Valhalla `/locate` request resolves every stop and the depot to a nearby car-accessible road candidate with minimum connected-network reachability. Motorway edges, ramps, and ferries are excluded as access candidates. The closest eligible candidate must be within 300 metres; the app never silently jumps a building pin to a distant road.
+
+The same prepared road coordinates and correlation settings are used by both the time matrix and final route. Road-access points appear as small outlined circles, linked to the place pins with dashed lines that are informational, not extra driving segments. Navigation links target the road access. Cached routes include their resolved access coordinates in their key, so changing an entrance cannot reuse an old route. Access lookups are cached only in memory and refreshed after reload.
+
+Each stop has an **Acesso** control for adjusting its vehicle/loading entrance independently of the business pin. A manual entrance can be at most 1 km from the business and must correlate to a drivable road within 100 metres. Manual entrances persist with the stop and update an existing favourite without automatically favouriting anything. Moving the business pin clears its manual entrance. An unavailable access or unreachable matrix pair identifies the place that needs attention. Road tagging cannot establish the actual loading-gate location or physical gate availability; drivers can adjust the suggested entrance.
 
 ## Tolls and routing
 

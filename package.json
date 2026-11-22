@@ -10,6 +10,7 @@
     "build": "node build.mjs",
     "test": "node optimizer.test.mjs && node costs.test.mjs && node routing.test.mjs && node search.test.mjs",
     "test:live": "node routing-live-check.mjs",
+    "test:access": "node road-access-live-check.mjs",
     "check": "node --check app.js && node --check optimizer.mjs && node --check costs.mjs && node --check routing.mjs && node --check search.mjs && node --check serve.mjs && node --check build.mjs"
   },
   "engines": { "node": ">=20" }
