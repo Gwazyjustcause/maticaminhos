@@ -11,14 +11,15 @@ export function parseSearch(raw,town=''){
   let locality=town.trim(),term=expanded;
   const street=roadPattern.test(expanded);
   if(parts.length>1){term=parts.slice(0,-1).join(', ');if(!locality)locality=parts.at(-1);}
-  if(locality&&normalize(term).endsWith(' '+normalize(locality)))term=term.slice(0,term.length-locality.length).trim().replace(/,$/,'');
+  if(locality&&normalize(term).endsWith(' '+normalize(locality)))term=term.slice(0,term.length-locality.length).trim().replace(/(?:,|\s+(?:em|no|na))$/i,'').trim();
   if(street&&!locality){
     const saint=term.match(/^(.+?\s+.+?)\s+(S(?:ão|ao|anta|anto)\s+.+)$/i);
     if(saint){term=saint[1];locality=saint[2];}
     else{const numbered=term.match(/^(.+?\s+\d+[a-z]?)\s+([A-Za-zÀ-ÿ].+)$/i);if(numbered){term=numbered[1];locality=numbered[2];}}
   }
   const house=street?term.match(/(?:\s|,)(?:n[.º°\s]*)?(\d+[a-z]?)\s*$/i)?.[1]||'':'';
-  return {raw,term:expandStreet(term),town:locality,street,business:/^(o |a |restaurante\b|cafe\b|continente\b|pingo doce\b|centro comercial\b|shopping\b)/.test(normalize(term)),house,streetName:house?term.replace(new RegExp('(?:\\s|,)(?:n[.º°\\s]*)?'+house+'\\s*$','i'),'').trim():term};
+  const supermarket=/^(continente|pingo doce|lidl|aldi|auchan|intermarche|minipreco)\b/.test(normalize(term));
+  return {raw,term:expandStreet(term),town:locality,street,supermarket:!street&&supermarket,business:supermarket||/^(o |a |restaurante\b|cafe\b|centro comercial\b|shopping\b)/.test(normalize(term)),house,streetName:house?term.replace(new RegExp('(?:\\s|,)(?:n[.º°\\s]*)?'+house+'\\s*$','i'),'').trim():term};
 }
 export function portugueseFeature(feature){const p=feature?.properties,c=feature?.geometry?.coordinates;return String(p?.countrycode||'').toUpperCase()==='PT'&&feature.geometry.type==='Point'&&Array.isArray(c)&&Number.isFinite(c[0])&&Number.isFinite(c[1]);}
 const adminNames=p=>[p.city,p.town,p.village,p.district,p.locality,p.name].filter(Boolean);
@@ -28,7 +29,11 @@ export function inferTown(features,parsed){
   return names.sort((a,b)=>normalize(b).length-normalize(a).length)[0]||'';
 }
 function distance(a,b){const rad=x=>x*Math.PI/180,dLat=rad(a.lat-b.lat),dLon=rad(a.lon-b.lon);return 6371000*2*Math.asin(Math.min(1,Math.sqrt(Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2)));}
-function bbox(context){const lat=context.geometry.coordinates[1],lon=context.geometry.coordinates[0],dLat=.045,dLon=.045/Math.cos(lat*Math.PI/180);return [lon-dLon,lat-dLat,lon+dLon,lat+dLat].join(',');}
+function bbox(context){
+  const e=context.properties.extent;
+  if(Array.isArray(e)&&e.length===4&&e.every(Number.isFinite)&&e[0]<e[2]&&e[3]<e[1]&&e[2]-e[0]<2&&e[1]-e[3]<2)return [e[0],e[3],e[2],e[1]].join(',');
+  const lat=context.geometry.coordinates[1],lon=context.geometry.coordinates[0],dLat=.045,dLon=.045/Math.cos(lat*Math.PI/180);return [lon-dLon,lat-dLat,lon+dLon,lat+dLat].join(',');
+}
 export function matchesFeature(feature,parsed,context=null){
   if(!portugueseFeature(feature))return false;
   const p=feature.properties;
@@ -40,6 +45,7 @@ export function matchesFeature(feature,parsed,context=null){
     if(!includesTokens(p.street||(p.osm_key==='highway'?p.name:''),tokens(parsed.streetName)))return false;
     if(parsed.house&&p.housenumber&&normalize(p.housenumber)!==normalize(parsed.house))return false;
   }else{
+    if(parsed.supermarket&&(p.osm_key!=='shop'||!['supermarket','convenience'].includes(p.osm_value)))return false;
     if(parsed.business&&(p.osm_key==='highway'||p.type==='street'))return false;
     const words=tokens(parsed.term.replace(/\bportugal\b/ig,''));
     if(words.length&&!includesTokens([p.name,p.postcode].filter(Boolean).join(' '),words))return false;
@@ -60,10 +66,11 @@ export async function findPlaces(raw,town,depot,fetchPhoton){
   async function resolveTown(){
     if(!parsed.town)return null;
     const data=await call('api/',{q:parsed.town});
-    return (data.features||[]).filter(portugueseFeature).find(f=>['place','boundary'].includes(f.properties.osm_key)&&normalize(f.properties.name)===normalize(parsed.town))||null;
+    const rank=f=>({city:0,town:1,village:2,suburb:3,hamlet:4}[f.properties.osm_value]??({city:0,locality:2,district:5,county:6}[f.properties.type]??7));
+    return (data.features||[]).filter(portugueseFeature).filter(f=>['place','boundary'].includes(f.properties.osm_key)&&normalize(f.properties.name)===normalize(parsed.town)).sort((a,b)=>rank(a)-rank(b))[0]||null;
   }
   context=await resolveTown();
-  const query=()=>call('api/',{q:parsed.town&&!context?`${parsed.term}, ${parsed.town}`:parsed.term,lat:context?.geometry.coordinates[1]??depot.lat,lon:context?.geometry.coordinates[0]??depot.lon,...(context?{bbox:bbox(context)}:{})});
+  const query=()=>call('api/',{q:parsed.town&&!context?`${parsed.term}, ${parsed.town}`:parsed.term,lat:context?.geometry.coordinates[1]??depot.lat,lon:context?.geometry.coordinates[0]??depot.lon,...(context?{bbox:bbox(context)}:{}),...(parsed.supermarket?{osm_tag:'shop:supermarket'}:{})});
   let data=await query();
   if(!parsed.town){const inferred=inferTown(data.features||[],parsed);if(inferred){parsed=parseSearch(raw,inferred);context=await resolveTown();data=await query();}}
   let features=(data.features||[]).filter(f=>matchesFeature(f,parsed,context));

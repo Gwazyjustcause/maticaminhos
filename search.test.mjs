@@ -7,6 +7,8 @@ assert.equal(parsed.term,'Rua Bela Vista');assert.equal(parsed.town,'São João 
 assert.equal(parseSearch('Rua Bela Vista São João de Lourosa').town,'São João de Lourosa');
 assert.equal(parseSearch('Rua da Sofia 20 Coimbra').town,'Coimbra');
 assert.equal(parseSearch('Rua da Sofia 20','Coimbra').house,'20');
+assert.equal(parseSearch('Continente em Viseu','Viseu').term,'Continente');
+assert.equal(parseSearch('Pingo Doce Viseu').supermarket,true);
 assert.equal(portugueseFeature(feature({name:'Paris',countrycode:'FR'})),false);
 assert.equal(portugueseFeature(feature({name:'Lisboa',countrycode:'pt'})),true);
 assert.equal(portugueseFeature(feature({name:'Unknown',countrycode:null})),false);
@@ -34,6 +36,22 @@ const found=await findPlaces('R. Bela Vista, São João de Lourosa','',depot,moc
 assert.equal(found.places.length,1);assert.equal(found.places[0].localityFallback,true);assert.equal(found.places[0].approximate,true);assert.match(found.places[0].note,/não a rua/);
 assert.ok(calls.some(call=>call.params.has('bbox')));assert.ok(calls.some(call=>call.endpoint==='structured'));
 const foreign=await findPlaces('Paris','',depot,async()=>({features:[feature({name:'Paris',countrycode:'FR'})]}));assert.equal(foreign.places.length,0);
+const viseuCity=feature({name:'Viseu',osm_key:'place',osm_value:'city',type:'city',extent:[-8.0915889,40.8425998,-7.7589842,40.5357325]},[-7.9138664,40.6574713]);
+const viseuDistrict=feature({name:'Viseu',osm_key:'boundary',osm_value:'administrative',type:'county'},[-7.9297048,40.7686621]);
+const stores=[feature({name:'Continente',osm_key:'shop',osm_value:'supermarket',city:'Viseu',street:'Avenida da Bélgica',housenumber:'150'},[-7.9192565,40.6730821]),feature({name:'Continente Modelo',osm_key:'shop',osm_value:'supermarket',city:'Viseu',street:'Avenida Fortes da Gama',housenumber:'16'},[-7.844847,40.6350252])];
+const notStores=[feature({name:'Continente Viseu',osm_key:'amenity',osm_value:'charging_station',city:'Viseu'}),feature({name:'Continente Viseu',osm_key:'amenity',osm_value:'recycling',city:'Viseu'}),feature({name:'Continente',osm_key:'amenity',osm_value:'parking',city:'Viseu'}),feature({name:'Tabacaria Continente',osm_key:'shop',osm_value:'tobacco',city:'Viseu'}),feature({name:'Continente',osm_key:'shop',osm_value:'supermarket',city:'Tondela',county:'Viseu'})];
+const viseuCalls=[];
+const viseuResults=await findPlaces('continente viseu','',depot,async(endpoint,params)=>{
+  viseuCalls.push(params);assert.equal(params.get('countrycode'),'PT');
+  if(params.get('q')==='Viseu')return {features:[viseuDistrict,viseuCity]};
+  assert.equal(params.get('osm_tag'),'shop:supermarket');
+  return {features:[...notStores,...stores]};
+});
+assert.equal(viseuResults.context.properties.osm_value,'city','Choose the actual city, regardless of the provider result order.');
+assert.deepEqual(viseuResults.places.map(p=>p.name),['Continente','Continente Modelo']);
+assert.equal(viseuResults.parsed.town,'Viseu');assert.equal(viseuResults.parsed.term,'continente');
+assert.ok(viseuCalls.some(params=>params.get('lat')==='40.6574713'&&params.get('bbox')==='-8.0915889,40.5357325,-7.7589842,40.8425998'),'Search the city extent, including stores outside its centre.');
+for(const item of notStores)assert.equal(matchesFeature(item,parseSearch('Continente','Viseu'),viseuCity),false);
 const imported=parseMapsCoordinates('https://www.google.com/maps/place/Test/@40,-8,14z/data=!3d40.2637622!4d-8.2775141');assert.equal(imported.lat,40.2637622);assert.equal(imported.lon,-8.2775141);
 assert.equal(parseMapsCoordinates('https://google.com.evil.test/maps/@40,-8,14z'),null);
 assert.equal(parseMapsCoordinates('https://www.google.com/maps?q=40.2,-8.3').lat,40.2);

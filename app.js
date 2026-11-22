@@ -2,7 +2,7 @@ import {optimizeOrder} from './optimizer.mjs?v=6';
 import {fuelEstimate,totalEstimate,tollForLegs} from './costs.mjs?v=11';
 import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=15';
 import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation,distanceMetres,restoreAccessMemory,rememberAccess,withRememberedAccess} from './routing.mjs?v=18';
-import {findPlaces,googleLookupURL,googleMapsURL,resolveMapsLink,portugueseFeature} from './search.mjs?v=17';
+import {findPlaces,googleLookupURL,googleMapsURL,resolveMapsLink,portugueseFeature} from './search.mjs?v=20';
 
 const $=id=>document.getElementById(id);
 const escapeHTML=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -210,7 +210,7 @@ function addPlace(place){
   if(busy)return false;
   place=withRememberedAccess(place,state.accesses);
   const wasDepot=changingDepot;
-  if(changingDepot){state.depot={...place};changingDepot=false;$('change-depot').textContent='Alterar';$('search').placeholder='Loja, morada, código postal ou link do Google Maps';}
+  if(changingDepot){state.depot={...place};changingDepot=false;$('change-depot').textContent='Alterar';$('search').placeholder='Loja e cidade, morada, código postal ou link Google Maps';}
   else{
     if(state.stops.length>=25){notify('A rota já tem 25 paragens.');return false;}
     if(state.stops.some(p=>samePlace(p,place))){notify('Este local já está na rota.');return false;}
@@ -218,11 +218,12 @@ function addPlace(place){
   }
   closeResults();$('search').value='';planChanged(true);persist();if(wasDepot)showRouteTop();else showStop(state.stops.length-1);notify('Local adicionado à rota. Use o coração para guardar a morada.');return true;
 }
-function planChanged(fit=false){
+function planChanged(fit=false,autoCalculate=true){
+  const recalculate=autoCalculate&&(!!route||!!calculateTimer);
+  clearTimeout(calculateTimer);calculateTimer=null;
   clearedPlan=null;
-  const recalculate=!!route;
   route=null;$('route-message').textContent=recalculate?'A atualizar a rota…':'Calcule a rota para atualizar os tempos.';render();drawMap(fit);persist();
-  if(recalculate){clearTimeout(calculateTimer);calculateTimer=setTimeout(()=>calculate(false),180);}
+  if(recalculate){clearTimeout(calculateTimer);calculateTimer=setTimeout(()=>calculate(false,false),180);}
 }
 $('clear-route').onclick=()=>{
   if(busy||searching||!state.stops.length)return;
@@ -230,8 +231,8 @@ $('clear-route').onclick=()=>{
   clearTimeout(calculateTimer);calculateTimer=null;
   state.stops=[];state.overrides={};route=null;accessIssue=null;draggedIndex=null;
   cancelPicker();closeResults();results=[];changingDepot=false;
-  $('change-depot').textContent='Alterar';$('search').placeholder='Loja, morada, código postal ou link do Google Maps';
-  $('search').value='';$('town').value='';
+  $('change-depot').textContent='Alterar';$('search').placeholder='Loja e cidade, morada, código postal ou link Google Maps';
+  $('search').value='';
   $('route-message').textContent='Rota limpa. As moradas guardadas foram mantidas.';
   render();drawMap(true);persist();notify('Rota limpa. Pode restaurá-la em «Restaurar rota».');
 };
@@ -249,7 +250,7 @@ $('change-depot').onclick=()=>{
   if(busy)return;
   changingDepot=!changingDepot;cancelPicker();
   $('change-depot').textContent=changingDepot?'Cancelar':'Alterar';
-  $('search').placeholder=changingDepot?'Morada ou nome da empresa':'Loja, morada, código postal ou link do Google Maps';
+  $('search').placeholder=changingDepot?'Morada ou nome da empresa':'Loja e cidade, morada, código postal ou link Google Maps';
   $('search').focus();notify(changingDepot?'Procure o novo ponto de partida ou escolha no mapa.':'Partida mantida.');
 };
 $('depot-access').onclick=()=>beginAccessPicker(-1);
@@ -262,7 +263,7 @@ function legHTML(leg){
 }
 function stopHTML(p,i,legs){
   const road=roadFor(p),failed=accessIssue===pointKey(p);
-  return `${legHTML(legs[i])}<article class="stop${route&&i<route.completed?' done':''}${failed?' needs-access':''}${selectedStop===pointKey(p)?' is-selected':''}" draggable="true" data-stop-index="${i}"><div class="stop-main"><span class="number">${route&&i<route.completed?'✓':i+1}</span><div class="stop-text"><button class="stop-name" data-edit="${i}" aria-label="Editar ${escapeHTML(p.name)}">${escapeHTML(p.name)}</button><small>${escapeHTML(p.address)}${p.approximate?' · Pin aproximado':''}</small>${road?`<small class="access-note">${road.manual?'Entrada memorizada':'Acesso memorizado'}${road.offset>5?' · '+Math.round(road.offset)+' m do local':''}</small>`:p.manualAccess?'<small class="access-note">Entrada memorizada</small>':''}${failed?'<small class="access-error">Indique a entrada de viatura em «Acesso».</small>':''}</div></div><div class="stop-actions"><button class="move-button" data-up="${i}" aria-label="Subir ${escapeHTML(p.name)}" ${i===0?'disabled':''}>Subir</button><button class="move-button" data-down="${i}" aria-label="Descer ${escapeHTML(p.name)}" ${i===state.stops.length-1?'disabled':''}>Descer</button><button class="move-button" data-access="${i}" aria-label="Ajustar acesso de ${escapeHTML(p.name)}">Acesso</button><button class="heart" data-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="icon-button" data-remove="${i}" aria-label="Remover ${escapeHTML(p.name)}">×</button></div></article>`;
+  return `${legHTML(legs[i])}<article class="stop${route&&i<route.completed?' done':''}${failed?' needs-access':''}${selectedStop===pointKey(p)?' is-selected':''}" draggable="true" data-stop-index="${i}"><div class="stop-main"><select class="number stop-position" data-position="${i}" aria-label="Posição de ${escapeHTML(p.name)}" title="Mover para outra posição">${state.stops.map((_,n)=>`<option value="${n}"${n===i?' selected':''}>${n+1}</option>`).join('')}</select><div class="stop-text"><button class="stop-name" data-edit="${i}" aria-label="Editar ${escapeHTML(p.name)}">${escapeHTML(p.name)}</button><small>${escapeHTML(p.address)}${p.approximate?' · Pin aproximado':''}</small>${road?`<small class="access-note">${road.manual?'Entrada memorizada':'Acesso memorizado'}${road.offset>5?' · '+Math.round(road.offset)+' m do local':''}</small>`:p.manualAccess?'<small class="access-note">Entrada memorizada</small>':''}${failed?'<small class="access-error">Indique a entrada de viatura em «Acesso».</small>':''}</div></div><div class="stop-actions"><button class="move-button" data-up="${i}" aria-label="Subir ${escapeHTML(p.name)}" ${i===0?'disabled':''}>Subir</button><button class="move-button" data-down="${i}" aria-label="Descer ${escapeHTML(p.name)}" ${i===state.stops.length-1?'disabled':''}>Descer</button><button class="move-button" data-access="${i}" aria-label="Ajustar acesso de ${escapeHTML(p.name)}">Acesso</button><button class="heart" data-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="icon-button" data-remove="${i}" aria-label="Remover ${escapeHTML(p.name)}">×</button></div></article>`;
 }
 function render(){
   const panel=document.querySelector('.route-panel'),scrollPosition=panel.scrollTop;
@@ -303,6 +304,18 @@ function renderSummary(){
   $('toll-breakdown-list').innerHTML=(pricing?.legs||[]).map((price,i)=>`<div class="cost-line"><span>${escapeHTML(route.legs[i].from.name)} → ${escapeHTML(route.legs[i].to.name)}${!price.complete?`<small class="toll-issue">${escapeHTML(price.reason)}</small>`:''}</span><strong>${price.complete?money(price.cents[Number(state.tollClass)-1]/100):'Não coberto'}</strong></div>`).join('');
   const total=totalEstimate(fuel?.cost??null,toll);$('total-cost').textContent=total!==null?money(total):'—';
 }
+function reorderStops(from,to){
+  if(busy||from===to||!Number.isInteger(to)||to<0||to>=state.stops.length)return;
+  state.stops=moveStop(state.stops,from,to);
+  planChanged(false,false);
+  $('route-message').textContent='Ordem alterada. Use «Calcular rota» quando terminar de organizar as paragens.';
+  showStop(to);
+}
+$('stop-list').addEventListener('change',event=>{
+  const select=event.target.closest('[data-position]');if(!select)return;
+  reorderStops(Number(select.dataset.position),Number(select.value));
+  $('stop-list').querySelector('.is-selected .stop-position')?.focus({preventScroll:true});
+});
 $('stop-list').onclick=event=>{
   if(busy)return;
   const button=event.target.closest('button');if(!button)return;
@@ -310,8 +323,8 @@ $('stop-list').onclick=event=>{
   if(button.hasAttribute('data-edit')){const i=Number(button.dataset.edit);beginPicker(state.stops[i],i);return;}
   if(button.hasAttribute('data-access')){beginAccessPicker(Number(button.dataset.access));return;}
   if(button.hasAttribute('data-remove'))state.stops.splice(Number(button.dataset.remove),1);
-  if(button.hasAttribute('data-up')){const i=Number(button.dataset.up);state.stops=moveStop(state.stops,i,i-1);}
-  if(button.hasAttribute('data-down')){const i=Number(button.dataset.down);state.stops=moveStop(state.stops,i,i+1);}
+  if(button.hasAttribute('data-up')){const i=Number(button.dataset.up);reorderStops(i,i-1);return;}
+  if(button.hasAttribute('data-down')){const i=Number(button.dataset.down);reorderStops(i,i+1);return;}
   planChanged();
 };
 function legChange(event){if(busy)return;const select=event.target.closest('[data-leg-key]');if(!select)return;if(select.value)state.overrides[select.dataset.legKey]=select.value;else delete state.overrides[select.dataset.legKey];planChanged();}
@@ -321,7 +334,7 @@ $('allow-tolls').onclick=()=>globalMode('allow');$('avoid-tolls').onclick=()=>gl
 $('stop-list').addEventListener('dragstart',event=>{const card=event.target.closest('[data-stop-index]');if(!card||busy){event.preventDefault();return;}draggedIndex=Number(card.dataset.stopIndex);card.classList.add('dragging');event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(draggedIndex));});
 $('stop-list').addEventListener('dragover',event=>{if(draggedIndex===null)return;const card=event.target.closest('[data-stop-index]');if(card){event.preventDefault();card.classList.add('drag-over');}});
 $('stop-list').addEventListener('dragleave',event=>event.target.closest('[data-stop-index]')?.classList.remove('drag-over'));
-$('stop-list').addEventListener('drop',event=>{event.preventDefault();const card=event.target.closest('[data-stop-index]');if(card&&draggedIndex!==null&&!busy){state.stops=moveStop(state.stops,draggedIndex,Number(card.dataset.stopIndex));draggedIndex=null;planChanged();}});
+$('stop-list').addEventListener('drop',event=>{event.preventDefault();const card=event.target.closest('[data-stop-index]');if(card&&draggedIndex!==null&&!busy){const from=draggedIndex;draggedIndex=null;reorderStops(from,Number(card.dataset.stopIndex));}});
 $('stop-list').addEventListener('dragend',()=>{draggedIndex=null;for(const card of document.querySelectorAll('.stop'))card.classList.remove('dragging','drag-over');});
 
 async function requestJSON(url,options={}){
@@ -405,13 +418,13 @@ async function matrixFor(points,mode){
 function setBusy(value){
   busy=value;
   for(const element of document.querySelectorAll('button,input,select'))element.disabled=value;
-  $('calculate').textContent=value?'A calcular…':'Manter ordem';
+  $('calculate').textContent=value?'A calcular…':'Calcular rota';
   if(!value)$('optimize').textContent='Rota mais rápida';
   render();
 }
-async function calculate(reorder){
+async function calculate(reorder,resetPanel=true){
   if(busy||searching||!state.stops.length)return;
-  clearTimeout(calculateTimer);cancelPicker();closeResults();setBusy(true);
+  clearTimeout(calculateTimer);calculateTimer=null;cancelPicker();closeResults();setBusy(true);
   if(reorder)$('optimize').textContent='A otimizar…';
   route=null;render();
   let calculated=false;
@@ -441,7 +454,7 @@ async function calculate(reorder){
     $('route-message').textContent=reorder?'Ordem sugerida pelos tempos de condução. Pode ajustar as paragens e cada trajeto.':'Rota calculada na ordem apresentada. As alterações recalculam o tempo total.';
     calculated=true;render();drawMap(true);persist();void updateTollPrices(route);
   }catch(error){if(error.place){accessIssue=pointKey(error.place);map?.flyTo([error.place.lat,error.place.lon],16);}$('route-message').textContent=error.name==='TimeoutError'?'O serviço demorou demasiado. Tente calcular novamente.':error.message;notify($('route-message').textContent);}
-  finally{setBusy(false);if(calculated)showRouteTop();}
+  finally{setBusy(false);if(calculated&&resetPanel)showRouteTop();}
 }
 $('calculate').onclick=()=>calculate(false);$('optimize').onclick=()=>calculate(true);
 
@@ -485,7 +498,7 @@ $('search-form').onsubmit=async event=>{
       beginPicker({...imported,name:imported.name||'Local do Google Maps',address:[p.street,p.housenumber,p.postcode,p.city||p.town||p.village,'Portugal'].filter(Boolean).join(', '),note:imported.approximate?'Localização aproximada. Confirme o pin na entrada de entrega.':'Local do Google Maps. Confirme a entrada de entrega antes de adicionar.'});
       return;
     }
-    const found=await findPlaces(normalizeQuery(raw),$('town').value,state.depot,photonRequest);
+    const found=await findPlaces(normalizeQuery(raw),'',state.depot,photonRequest);
     results=found.places;
     renderResults();
   }catch(error){$('results-title').textContent='Não foi possível localizar';$('results').innerHTML=`<p class="results-empty">${escapeHTML(error.message||'Tente novamente ou escolha o ponto no mapa.')}</p>${lookupHTML()}`;}
@@ -494,7 +507,7 @@ $('search-form').onsubmit=async event=>{
 function lookupHTML(){
   const query=$('search').value.trim(),link=googleMapsURL(query);
   if(link)return `<div class="lookup-help"><a href="${escapeHTML(link.href)}" target="_blank" rel="noopener">Abrir o local no Google Maps</a><small>Se o link estiver indisponível, copie a morada ou escolha a entrada no mapa.</small></div>`;
-  return query?`<div class="lookup-help"><span>Falta um estabelecimento?</span><a href="${escapeHTML(googleLookupURL(query,$('town').value))}" target="_blank" rel="noopener">Procurar no Google Maps</a><small>Depois cole aqui a morada ou o link partilhado pelo Google Maps.</small></div>`:'';
+  return query?`<div class="lookup-help"><span>Falta um estabelecimento?</span><a href="${escapeHTML(googleLookupURL(query))}" target="_blank" rel="noopener">Procurar no Google Maps</a><small>Depois cole aqui a morada ou o link partilhado pelo Google Maps.</small></div>`:'';
 }
 function resultPlaces(saved=false){return saved?state.saved.filter(p=>selectedGroup==='all'||(p.groupId||'')===(selectedGroup==='none'?'':selectedGroup)):results;}
 function groupOptions(selected){return `<option value=""${!selected?' selected':''}>Sem grupo</option>`+state.groups.map(g=>`<option value="${escapeHTML(g.id)}"${g.id===selected?' selected':''}>${escapeHTML(g.name)}</option>`).join('');}
