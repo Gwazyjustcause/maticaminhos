@@ -29,6 +29,7 @@ let map,markers,routeLines;
 const legCache=new Map();
 const roadCache=new Map();
 let accessIssue=null;
+let clearedPlan=null;
 const roadFor=p=>roadCache.get(accessKey(p));
 const samePlace=(a,b)=>pointKey(a)===pointKey(b);
 const isFavorite=place=>state.saved.some(p=>samePlace(p,place));
@@ -126,7 +127,7 @@ $('confirm-place').onclick=()=>{
 };
 function toggleFavorite(place){
   const existing=state.saved.findIndex(p=>samePlace(p,place));
-  if(existing>=0)state.saved.splice(existing,1);else{if(state.saved.length>=500)return notify('Já tem 500 favoritos.');state.saved.push({...place});}
+  if(existing>=0)state.saved.splice(existing,1);else{if(state.saved.length>=500)return notify('Já tem 500 moradas guardadas.');state.saved.push({...place});}
   persist();render();if(!$('results-panel').hidden)renderResults();
 }
 function addPlace(place){
@@ -137,13 +138,34 @@ function addPlace(place){
     if(state.stops.some(p=>samePlace(p,place))){notify('Este local já está na rota.');return false;}
     state.stops.push({...place});
   }
-  closeResults();$('search').value='';planChanged(true);persist();notify('Local adicionado à rota. Use o coração para o guardar nos favoritos.');return true;
+  closeResults();$('search').value='';planChanged(true);persist();notify('Local adicionado à rota. Use o coração para guardar a morada.');return true;
 }
 function planChanged(fit=false){
+  clearedPlan=null;
   const recalculate=!!route;
   route=null;$('toll-amount').value='';$('route-message').textContent=recalculate?'A atualizar a rota…':'Calcule a rota para atualizar os tempos.';render();drawMap(fit);persist();
   if(recalculate){clearTimeout(calculateTimer);calculateTimer=setTimeout(()=>calculate(false),180);}
 }
+$('clear-route').onclick=()=>{
+  if(busy||searching||!state.stops.length)return;
+  clearedPlan={stops:[...state.stops],overrides:{...state.overrides},route,tollClass:state.tollClass};
+  clearTimeout(calculateTimer);calculateTimer=null;
+  state.stops=[];state.overrides={};route=null;accessIssue=null;draggedIndex=null;
+  cancelPicker();closeResults();results=[];showingFavorites=false;changingDepot=false;
+  $('change-depot').textContent='Alterar';$('search').placeholder='Loja, restaurante, morada ou código postal';
+  $('search').value='';$('town').value='';$('toll-amount').value='';
+  $('route-message').textContent='Rota limpa. As moradas guardadas foram mantidas.';
+  render();drawMap(true);persist();notify('Rota limpa. Pode restaurá-la em «Restaurar rota».');
+};
+$('undo-clear').onclick=()=>{
+  if(busy||searching||!clearedPlan)return;
+  const previous=clearedPlan;clearedPlan=null;
+  state.stops=previous.stops;state.overrides=previous.overrides;
+  route=previous.route?{...previous.route,...totalTrip(previous.route.legs,state.stops.length,state.service),toll:previous.tollClass===state.tollClass?previous.route.toll:null}:null;
+  $('toll-amount').value=route?.toll??'';
+  $('route-message').textContent='Rota restaurada.';
+  render();drawMap(true);persist();notify('Rota restaurada.');
+};
 $('change-depot').onclick=()=>{
   if(busy)return;
   changingDepot=!changingDepot;cancelPicker();
@@ -161,18 +183,21 @@ function legHTML(leg){
 }
 function stopHTML(p,i,legs){
   const road=roadFor(p),failed=accessIssue===pointKey(p);
-  return `${legHTML(legs[i])}<article class="stop${route&&i<route.completed?' done':''}${failed?' needs-access':''}" draggable="true" data-stop-index="${i}"><div class="stop-main"><span class="number">${route&&i<route.completed?'✓':i+1}</span><div class="stop-text"><button class="stop-name" data-edit="${i}" aria-label="Editar ${escapeHTML(p.name)}">${escapeHTML(p.name)}</button><small>${escapeHTML(p.address)}${p.approximate?' · Pin aproximado':''}</small>${road&&road.offset>5?`<small class="access-note">Acesso pela estrada · ${Math.round(road.offset)} m do local</small>`:''}${failed?'<small class="access-error">Indique a entrada de viatura em «Acesso».</small>':''}</div></div><div class="stop-actions"><button class="move-button" data-up="${i}" aria-label="Subir ${escapeHTML(p.name)}" ${i===0?'disabled':''}>Subir</button><button class="move-button" data-down="${i}" aria-label="Descer ${escapeHTML(p.name)}" ${i===state.stops.length-1?'disabled':''}>Descer</button><button class="move-button" data-access="${i}" aria-label="Ajustar acesso de ${escapeHTML(p.name)}">Acesso</button><button class="heart" data-heart="${i}" aria-label="${isFavorite(p)?'Retirar dos':'Guardar nos'} favoritos: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="icon-button" data-remove="${i}" aria-label="Remover ${escapeHTML(p.name)}">×</button></div></article>`;
+  return `${legHTML(legs[i])}<article class="stop${route&&i<route.completed?' done':''}${failed?' needs-access':''}" draggable="true" data-stop-index="${i}"><div class="stop-main"><span class="number">${route&&i<route.completed?'✓':i+1}</span><div class="stop-text"><button class="stop-name" data-edit="${i}" aria-label="Editar ${escapeHTML(p.name)}">${escapeHTML(p.name)}</button><small>${escapeHTML(p.address)}${p.approximate?' · Pin aproximado':''}</small>${road&&road.offset>5?`<small class="access-note">Acesso pela estrada · ${Math.round(road.offset)} m do local</small>`:''}${failed?'<small class="access-error">Indique a entrada de viatura em «Acesso».</small>':''}</div></div><div class="stop-actions"><button class="move-button" data-up="${i}" aria-label="Subir ${escapeHTML(p.name)}" ${i===0?'disabled':''}>Subir</button><button class="move-button" data-down="${i}" aria-label="Descer ${escapeHTML(p.name)}" ${i===state.stops.length-1?'disabled':''}>Descer</button><button class="move-button" data-access="${i}" aria-label="Ajustar acesso de ${escapeHTML(p.name)}">Acesso</button><button class="heart" data-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="icon-button" data-remove="${i}" aria-label="Remover ${escapeHTML(p.name)}">×</button></div></article>`;
 }
 function render(){
   const panel=document.querySelector('.route-panel'),scrollPosition=panel.scrollTop;
   const legs=currentLegs();
   $('depot-name').textContent=state.depot.name;$('count').textContent=`${state.stops.length} ${state.stops.length===1?'paragem':'paragens'}`;
   $('saved-count').textContent=state.saved.length;$('empty').hidden=state.stops.length>0;
+  $('saved-button').setAttribute('aria-label',`Moradas guardadas (${state.saved.length})`);
   $('allow-tolls').setAttribute('aria-pressed',String(state.mode==='allow'));$('avoid-tolls').setAttribute('aria-pressed',String(state.mode==='avoid'));
   $('stop-list').innerHTML=state.stops.map((p,i)=>stopHTML(p,i,legs)).join('');
   $('return-leg').innerHTML=state.roundtrip&&state.stops.length?legHTML(legs.at(-1)):'';
   const hasStops=state.stops.length>0;
   $('calculate').disabled=busy||searching||!hasStops;$('optimize').disabled=busy||searching||!hasStops;
+  $('clear-route').disabled=busy||searching||!hasStops;
+  $('undo-clear').hidden=!clearedPlan;$('undo-clear').disabled=busy||searching;
   if(busy)for(const element of document.querySelectorAll('button,input,select'))element.disabled=true;
   renderSummary();renderNavigation();drawMap();panel.scrollTop=scrollPosition;
 }
@@ -328,8 +353,8 @@ $('search-form').onsubmit=async event=>{
 function lookupHTML(){const query=$('search').value.trim();return query?`<div class="lookup-help"><span>Falta um estabelecimento?</span><a href="${escapeHTML(googleLookupURL(query,$('town').value))}" target="_blank" rel="noopener">Procurar no Google Maps</a><small>Depois cole aqui a morada ou o link completo com coordenadas.</small></div>`:'';}
 function renderResults(){
   const places=showingFavorites?state.saved:results;
-  $('results-title').textContent=showingFavorites?'Os seus favoritos':'Escolha o local certo';
-  const entries=places.length?places.map((p,i)=>`<div class="result"><button class="result-body" data-preview="${i}"><strong>${escapeHTML(p.name)}</strong><small>${escapeHTML(p.address)}${p.note?' · '+escapeHTML(p.note):p.approximate?' · Zona aproximada: confirme o pin':''}</small>${p.source?'<small>Localização publicada pelo estabelecimento</small>':''}</button><button class="heart" data-result-heart="${i}" aria-label="${isFavorite(p)?'Retirar dos':'Guardar nos'} favoritos: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="add-result" data-result-add="${i}">${p.approximate?'No mapa':'Adicionar'}</button></div>`).join(''):`<p class="results-empty">${showingFavorites?'Ainda não há favoritos. Toque no coração de um local para o guardar.':'Sem correspondência em Portugal. Indique a rua e a cidade/vila, ou escolha o ponto no mapa.'}</p>`;
+  $('results-title').textContent=showingFavorites?'Moradas guardadas':'Escolha o local certo';
+  const entries=places.length?places.map((p,i)=>`<div class="result"><button class="result-body" data-preview="${i}"><strong>${escapeHTML(p.name)}</strong><small>${escapeHTML(p.address)}${p.note?' · '+escapeHTML(p.note):p.approximate?' · Zona aproximada: confirme o pin':''}</small>${p.source?'<small>Localização publicada pelo estabelecimento</small>':''}</button><button class="heart" data-result-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="add-result" data-result-add="${i}">${p.approximate?'No mapa':'Adicionar'}</button></div>`).join(''):`<p class="results-empty">${showingFavorites?'Ainda não tem moradas guardadas. Toque no coração para guardar uma morada.':'Sem correspondência em Portugal. Indique a rua e a cidade/vila, ou escolha o ponto no mapa.'}</p>`;
   $('results').innerHTML=entries+(showingFavorites?'':lookupHTML());
 }
 $('saved-button').onclick=()=>{showingFavorites=true;$('results-panel').hidden=false;renderResults();};
