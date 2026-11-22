@@ -12,18 +12,22 @@ const defaultDepot={name:'Matisilva — Carnes Lda',address:'Zona Industrial · 
 const validPlace=p=>p&&typeof p.name==='string'&&typeof p.address==='string'&&Number.isFinite(p.lat)&&Math.abs(p.lat)<=90&&Number.isFinite(p.lon)&&Math.abs(p.lon)<=180;
 const positive=value=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
 const modeValue=value=>value==='avoid'?'avoid':'allow';
-let state={depot:defaultDepot,stops:[],saved:[],roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{}};
+const defaultGroups=[{id:'restaurants',name:'Restaurantes'},{id:'continentes',name:'Continentes'},{id:'pingo-doce',name:'Pingo Doce'}];
+let state={depot:defaultDepot,stops:[],saved:[],groups:defaultGroups,roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{}};
 try{
   const data=JSON.parse(localStorage.getItem('maticaminhos-v1'));
   if(data)state={
     depot:validPlace(data.depot)?data.depot:defaultDepot,
     stops:Array.isArray(data.stops)?data.stops.filter(validPlace).slice(0,25):[],
     saved:Array.isArray(data.saved)?data.saved.filter(validPlace).slice(0,500):[],
+    groups:Array.isArray(data.groups)?data.groups.filter(g=>g&&typeof g.id==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(g.id)&&typeof g.name==='string'&&g.name.trim()).slice(0,100).map(g=>({id:g.id,name:g.name.trim().slice(0,40)})):defaultGroups,
     roundtrip:data.roundtrip!==false,service:Number.isFinite(data.service)?Math.max(0,Math.min(120,data.service)):10,
     consumption:positive(data.consumption),fuelPrice:positive(data.fuelPrice),tollClass:/^[1-4]$/.test(data.tollClass)?String(data.tollClass):'',
     mode:modeValue(data.mode),overrides:Object.fromEntries(Object.entries(data.overrides||{}).filter(([,v])=>v==='allow'||v==='avoid'))
   };
 }catch{}
+state.saved=state.saved.map(p=>({...p,groupId:state.groups.some(g=>g.id===p.groupId)?p.groupId:''}));
+let selectedGroup='all',editingGroup=null;
 let route=null,busy=false,searching=false,changingDepot=false,pending=null,pendingMarker=null,pendingFavorite=false,toastTimer,calculateTimer,results=[],showingFavorites=false,draggedIndex=null;
 let map,markers,routeLines;
 const legCache=new Map();
@@ -114,9 +118,10 @@ $('confirm-place').onclick=()=>{
     const old=state.stops[editIndex];
     if(samePlace(old,place)&&old.manualAccess)place.manualAccess=old.manualAccess;
     if(state.stops.some((p,i)=>i!==editIndex&&samePlace(p,place)))return notify('Este local já está na rota.');
-    if(isFavorite(old))state.saved=state.saved.filter(p=>!samePlace(p,old));
+    const oldSaved=state.saved.find(p=>samePlace(p,old));
+    if(oldSaved)state.saved=state.saved.filter(p=>!samePlace(p,old));
     state.stops[editIndex]=place;
-    if(pendingFavorite&&!isFavorite(place))state.saved.push(place);
+    if(pendingFavorite&&!isFavorite(place))state.saved.push({...place,groupId:oldSaved?.groupId||''});
     cancelPicker();planChanged(true);persist();notify('Paragem atualizada.');
   }else{
     const save=pendingFavorite;
@@ -191,6 +196,7 @@ function render(){
   $('depot-name').textContent=state.depot.name;$('count').textContent=`${state.stops.length} ${state.stops.length===1?'paragem':'paragens'}`;
   $('saved-count').textContent=state.saved.length;$('empty').hidden=state.stops.length>0;
   $('saved-button').setAttribute('aria-label',`Moradas guardadas (${state.saved.length})`);
+  $('saved-button').disabled=busy||searching;
   $('allow-tolls').setAttribute('aria-pressed',String(state.mode==='allow'));$('avoid-tolls').setAttribute('aria-pressed',String(state.mode==='avoid'));
   $('stop-list').innerHTML=state.stops.map((p,i)=>stopHTML(p,i,legs)).join('');
   $('return-leg').innerHTML=state.roundtrip&&state.stops.length?legHTML(legs.at(-1)):'';
@@ -342,7 +348,7 @@ $('search-form').onsubmit=async event=>{
   if(raw.includes('maps.app.goo.gl'))return notify('Abra esse link e copie a morada ou o link completo da barra de endereço do Google Maps.');
   const imported=parseMapsCoordinates(raw);
   if(Date.now()-lastSearch<1500)return;lastSearch=Date.now();searching=true;showingFavorites=false;
-  $('results-panel').hidden=false;$('results-title').textContent='A procurar…';$('results').replaceChildren();$('search-button').disabled=true;render();
+  renderSavedTools();$('results-panel').hidden=false;$('results-title').textContent='A procurar…';$('results').replaceChildren();$('search-button').disabled=true;render();
   try{
     if(imported){
       const data=await photonRequest('reverse',new URLSearchParams({lat:imported.lat,lon:imported.lon,radius:'1',limit:'1'}));
@@ -361,15 +367,51 @@ $('search-form').onsubmit=async event=>{
   finally{searching=false;$('search-button').disabled=false;render();}
 };
 function lookupHTML(){const query=$('search').value.trim();return query?`<div class="lookup-help"><span>Falta um estabelecimento?</span><a href="${escapeHTML(googleLookupURL(query,$('town').value))}" target="_blank" rel="noopener">Procurar no Google Maps</a><small>Depois cole aqui a morada ou o link completo com coordenadas.</small></div>`:'';}
+function resultPlaces(){return showingFavorites?state.saved.filter(p=>selectedGroup==='all'||(p.groupId||'')===(selectedGroup==='none'?'':selectedGroup)):results;}
+function groupOptions(selected){return `<option value=""${!selected?' selected':''}>Sem grupo</option>`+state.groups.map(g=>`<option value="${escapeHTML(g.id)}"${g.id===selected?' selected':''}>${escapeHTML(g.name)}</option>`).join('');}
+function renderSavedTools(){
+  $('saved-tools').hidden=!showingFavorites;
+  if(!showingFavorites){$('group-editor').hidden=true;return;}
+  if(!['all','none'].includes(selectedGroup)&&!state.groups.some(g=>g.id===selectedGroup))selectedGroup='all';
+  $('group-filter').innerHTML=`<option value="all">Todas (${state.saved.length})</option><option value="none">Sem grupo (${state.saved.filter(p=>!p.groupId).length})</option>`+state.groups.map(g=>`<option value="${escapeHTML(g.id)}">${escapeHTML(g.name)} (${state.saved.filter(p=>p.groupId===g.id).length})</option>`).join('');
+  $('group-filter').value=selectedGroup;
+  $('rename-group').hidden=['all','none'].includes(selectedGroup);
+}
 function renderResults(){
-  const places=showingFavorites?state.saved:results;
+  renderSavedTools();
+  const places=resultPlaces();
   $('results-title').textContent=showingFavorites?'Moradas guardadas':'Escolha o local certo';
-  const entries=places.length?places.map((p,i)=>`<div class="result"><button class="result-body" data-preview="${i}"><strong>${escapeHTML(p.name)}</strong><small>${escapeHTML(p.address)}${p.note?' · '+escapeHTML(p.note):p.approximate?' · Zona aproximada: confirme o pin':''}</small>${p.source?'<small>Localização publicada pelo estabelecimento</small>':''}</button><button class="heart" data-result-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="add-result" data-result-add="${i}">${p.approximate?'No mapa':'Adicionar'}</button></div>`).join(''):`<p class="results-empty">${showingFavorites?'Ainda não tem moradas guardadas. Toque no coração para guardar uma morada.':'Sem correspondência em Portugal. Indique a rua e a cidade/vila, ou escolha o ponto no mapa.'}</p>`;
+  const entries=places.length?places.map((p,i)=>`<div class="result${showingFavorites?' saved-result':''}"><button class="result-body" data-preview="${i}"><strong>${escapeHTML(p.name)}</strong><small>${escapeHTML(p.address)}${p.note?' · '+escapeHTML(p.note):p.approximate?' · Zona aproximada: confirme o pin':''}</small>${p.source?'<small>Localização publicada pelo estabelecimento</small>':''}</button><button class="heart" data-result-heart="${i}" aria-label="${isFavorite(p)?'Remover das moradas guardadas':'Guardar morada'}: ${escapeHTML(p.name)}" aria-pressed="${isFavorite(p)}">${isFavorite(p)?'♥':'♡'}</button><button class="add-result" data-result-add="${i}">${p.approximate?'No mapa':'Adicionar'}</button>${showingFavorites?`<label class="address-group">Grupo<select data-address-group="${i}" aria-label="Grupo de ${escapeHTML(p.name)}">${groupOptions(p.groupId)}</select></label>`:''}</div>`).join(''):`<p class="results-empty">${showingFavorites?(state.saved.length?'Ainda não há moradas neste grupo. Escolha «Todas» para organizar as suas moradas.':'Ainda não tem moradas guardadas. Toque no coração para guardar uma morada.'):'Sem correspondência em Portugal. Indique a rua e a cidade/vila, ou escolha o ponto no mapa.'}</p>`;
   $('results').innerHTML=entries+(showingFavorites?'':lookupHTML());
 }
-$('saved-button').onclick=()=>{showingFavorites=true;$('results-panel').hidden=false;renderResults();};
+$('saved-button').onclick=()=>{showingFavorites=true;$('group-editor').hidden=true;$('results-panel').hidden=false;renderResults();};
+$('group-filter').onchange=()=>{selectedGroup=$('group-filter').value;$('group-editor').hidden=true;renderResults();};
+function openGroupEditor(id){
+  editingGroup=id;$('group-name').value=state.groups.find(g=>g.id===id)?.name||'';
+  $('group-editor-title').textContent=id?'Renomear grupo':'Novo grupo';$('group-error').textContent='';$('group-editor').hidden=false;$('group-name').focus();
+}
+$('new-group').onclick=()=>openGroupEditor(null);
+$('rename-group').onclick=()=>openGroupEditor(selectedGroup);
+$('cancel-group').onclick=()=>{$('group-editor').hidden=true;};
+$('group-editor').onsubmit=event=>{
+  event.preventDefault();if(busy)return;
+  const name=$('group-name').value.trim();
+  if(!name){$('group-error').textContent='Indique um nome para o grupo.';return;}
+  if(state.groups.some(g=>g.id!==editingGroup&&g.name.toLocaleLowerCase('pt-PT')===name.toLocaleLowerCase('pt-PT'))){$('group-error').textContent='Já existe um grupo com esse nome.';return;}
+  if(editingGroup){const group=state.groups.find(g=>g.id===editingGroup);if(group)group.name=name;}
+  else{
+    if(state.groups.length>=100){$('group-error').textContent='Já tem 100 grupos.';return;}
+    const group={id:crypto.randomUUID(),name};state.groups.push(group);selectedGroup='all';
+  }
+  $('group-editor').hidden=true;persist();renderResults();notify('Grupo guardado. Pode escolhê-lo no campo «Grupo» de cada morada.');
+};
+$('results').onchange=event=>{
+  if(busy)return;const select=event.target.closest('[data-address-group]');if(!select||!showingFavorites)return;
+  const place=resultPlaces()[Number(select.dataset.addressGroup)];if(!place)return;
+  place.groupId=state.groups.some(g=>g.id===select.value)?select.value:'';persist();renderResults();notify('Grupo da morada atualizado.');
+};
 $('results').onclick=event=>{
-  if(busy)return;const places=showingFavorites?state.saved:results;
+  if(busy)return;const places=resultPlaces();
   const preview=event.target.closest('[data-preview]'),heart=event.target.closest('[data-result-heart]'),add=event.target.closest('[data-result-add]');
   if(preview)beginPicker(places[Number(preview.dataset.preview)]);
   if(heart){const place=places[Number(heart.dataset.resultHeart)];if(place.approximate&&!isFavorite(place)){beginPicker(place);pendingFavorite=true;$('picker-heart').textContent='♥';$('picker-heart').setAttribute('aria-pressed','true');}else toggleFavorite(place);}
