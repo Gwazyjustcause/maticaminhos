@@ -1,0 +1,64 @@
+import {optimizeOrder} from './optimizer.mjs';
+const $=id=>document.getElementById(id);
+document.querySelector('button[value="cancel"]').formNoValidate=true;
+const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const DEFAULT_DEPOT={name:'Matisilva — Carnes Lda',address:'Zona Industrial · Condeixa-a-Nova',lat:40.1299257,lon:-8.5240277};
+const valid=p=>p&&typeof p.name==='string'&&typeof p.address==='string'&&Number.isFinite(p.lat)&&Math.abs(p.lat)<=90&&Number.isFinite(p.lon)&&Math.abs(p.lon)<=180;
+let state={depot:DEFAULT_DEPOT,stops:[],saved:[],roundtrip:true,service:10};
+try{const data=JSON.parse(localStorage.getItem('maticaminhos-v1'));if(data){state={depot:valid(data.depot)?data.depot:DEFAULT_DEPOT,stops:(data.stops||[]).filter(valid).slice(0,25),saved:(data.saved||[]).filter(valid).slice(0,500),roundtrip:data.roundtrip!==false,service:Number.isFinite(data.service)?Math.max(0,Math.min(120,data.service)):10};}}catch{}
+let route=null,busy=false,changingDepot=false,pending=null,toastTimer;
+function notify(message){$('status').textContent=message;$('status').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('status').style.display='none',6500);}
+function persist(){try{localStorage.setItem('maticaminhos-v1',JSON.stringify(state));}catch{notify('Não foi possível guardar neste navegador. Exporte a rota para manter uma cópia.');}}
+const same=(a,b)=>Math.abs(a.lat-b.lat)<0.00003&&Math.abs(a.lon-b.lon)<0.00003;
+const coords=p=>`${p.lon},${p.lat}`;
+const navigation=p=>`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(p.lat+','+p.lon)}&travelmode=driving`;
+$('today').textContent=new Intl.DateTimeFormat('pt-PT',{weekday:'long',day:'numeric',month:'long',timeZone:'Europe/Lisbon'}).format(new Date());
+$('roundtrip').checked=state.roundtrip;$('service').value=state.service;
+let map,markers,line;
+if(window.L){map=L.map('map',{scrollWheelZoom:false}).setView([state.depot.lat,state.depot.lon],11);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);markers=L.layerGroup().addTo(map);map.on('click',e=>openCoordinate(e.latlng.lat,e.latlng.lng));}
+else{$('map').innerHTML='<p style="padding:30px">O mapa não carregou. A pesquisa e o planeamento continuam disponíveis. Atualize a página para tentar novamente.</p>';}
+function draw(){if(!map)return;markers.clearLayers();[state.depot,...state.stops].forEach((p,i)=>{L.marker([p.lat,p.lon],{icon:L.divIcon({className:'map-pin'+(!i?' depot-pin':''),html:i||'⌂',iconSize:[31,31],iconAnchor:[15,15]})}).addTo(markers).bindPopup(`<strong>${esc(p.name)}</strong><br>${esc(p.address)}`);});}
+function fit(){if(map)map.fitBounds(L.latLngBounds([state.depot,...state.stops].map(p=>[p.lat,p.lon])),{padding:[45,45],maxZoom:14});}
+function invalidate(){route=null;if(line){line.remove();line=null;}$('itinerary').hidden=true;$('metric-distance').innerHTML='—<small> km</small>';$('metric-time').textContent='—';$('route-note').textContent='Adicione as entregas e otimize para ver a sequência sugerida.';}
+function render(){
+  $('depot-name').textContent=state.depot.name;$('depot-address').textContent=state.depot.address;
+  $('count').textContent=`${state.stops.length} / 25`;$('metric-stops').innerHTML=`${state.stops.length}<small> restaurantes</small>`;$('empty').hidden=!!state.stops.length;$('saved-count').textContent=state.saved.length;
+  $('stop-list').innerHTML=state.stops.map((p,i)=>`<div class="stop"><span class="number">${i+1}</span><div><strong>${esc(p.name)}</strong><small>${esc(p.address)}</small></div><button data-remove="${i}" aria-label="Remover ${esc(p.name)}">×</button></div>`).join('');
+  $('saved-list').innerHTML=state.saved.map((p,i)=>`<div class="saved-item"><div><strong>${esc(p.name)}</strong><small>${esc(p.address)}</small></div><button data-add="${i}" aria-label="Adicionar ${esc(p.name)}">＋</button><button data-forget="${i}" aria-label="Esquecer ${esc(p.name)}">×</button></div>`).join('');
+  draw();persist();
+}
+function addPlace(p){if(changingDepot){state.depot=p;changingDepot=false;$('search').placeholder='Ex.: restaurante, Coimbra';notify('Ponto de partida atualizado.');}else{if(state.stops.length>=25)return notify('Esta rota já tem 25 paragens.');if(state.stops.some(s=>same(s,p)))return notify('Este restaurante já está na rota.');state.stops.push(p);if(!state.saved.some(s=>same(s,p)))state.saved.push(p);notify('Restaurante adicionado e guardado.');}invalidate();render();fit();$('results').replaceChildren();$('search').value='';}
+function openCoordinate(lat,lon){if(busy)return;pending={lat,lon};$('coordinate-description').textContent=`${changingDepot?'Novo ponto de partida':'Nova paragem'} · ${lat.toFixed(6)}, ${lon.toFixed(6)}. Confirme a localização e indique o nome.`;$('place-name').value='';$('coordinate-dialog').showModal();}
+$('coordinate-dialog').addEventListener('close',()=>{if($('coordinate-dialog').returnValue==='confirm'&&pending){const name=$('place-name').value.trim();if(name)addPlace({...pending,name,address:pending.address||`${pending.lat.toFixed(6)}, ${pending.lon.toFixed(6)}`});}pending=null;});
+$('change-depot').onclick=()=>{if(busy)return;changingDepot=!changingDepot;$('search').placeholder=changingDepot?'Pesquisar nova empresa ou coordenadas':'Ex.: restaurante, Coimbra';$('search').focus();notify(changingDepot?'Pesquise a empresa ou clique no mapa para definir a partida.':'Alteração cancelada.');};
+$('stop-list').onclick=e=>{const b=e.target.closest('[data-remove]');if(!b||busy)return;state.stops.splice(Number(b.dataset.remove),1);invalidate();render();};
+$('saved-button').onclick=()=>$('saved-list').hidden=!$('saved-list').hidden;
+$('saved-list').onclick=e=>{if(busy)return;const add=e.target.closest('[data-add]'),forget=e.target.closest('[data-forget]');if(add)addPlace(state.saved[Number(add.dataset.add)]);if(forget){state.saved.splice(Number(forget.dataset.forget),1);render();}};
+$('roundtrip').onchange=()=>{state.roundtrip=$('roundtrip').checked;invalidate();persist();};
+$('service').onchange=()=>{state.service=Math.max(0,Math.min(120,Number($('service').value)||0));$('service').value=state.service;invalidate();persist();};
+$('fit').onclick=fit;
+async function getJSON(url){const response=await fetch(url,{signal:AbortSignal.timeout(30000)});if(!response.ok)throw new Error('Serviço indisponível. Tente novamente dentro de alguns minutos.');return response.json();}
+let lastSearch=0;
+$('search-form').onsubmit=async e=>{e.preventDefault();if(busy)return;const q=$('search').value.trim();if(q.length<3)return notify('Indique o restaurante e a localidade.');
+  const coordinate=q.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);if(coordinate){const lat=Number(coordinate[1]),lon=Number(coordinate[2]);if(Math.abs(lat)>90||Math.abs(lon)>180)return notify('Coordenadas inválidas. Use latitude, longitude.');openCoordinate(lat,lon);return;}
+  if(q.includes('maps.app.goo.gl')||q.includes('google.com/maps'))return notify('Para adicionar um local do Google Maps, pesquise o nome e a localidade ou cole latitude, longitude.');
+  if(Date.now()-lastSearch<1500)return;lastSearch=Date.now();$('search-button').disabled=true;$('results').textContent='A procurar…';
+  try{let data;try{data=JSON.parse(sessionStorage.getItem('photon:'+q));}catch{}if(!data){const params=new URLSearchParams({q,limit:'5',lat:state.depot.lat,lon:state.depot.lon});data=await getJSON('https://photon.komoot.io/api/?'+params);try{sessionStorage.setItem('photon:'+q,JSON.stringify(data));}catch{}}
+    $('results').replaceChildren();const features=(data.features||[]).filter(f=>f.geometry?.type==='Point');if(!features.length){$('results').textContent='Sem resultados. Acrescente a localidade, introduza coordenadas ou clique no mapa.';return;}
+    features.forEach(f=>{const p=f.properties;const place={name:p.name||p.street||q,address:[p.street,p.housenumber,p.postcode,p.city||p.town||p.village,p.country].filter(Boolean).join(', '),lon:f.geometry.coordinates[0],lat:f.geometry.coordinates[1]};const b=document.createElement('button');b.type='button';b.className='result';b.innerHTML=`<span>⌖</span><div><strong>${esc(place.name)}</strong><small>${esc(place.address)}</small></div>`;b.onclick=()=>{if(!busy){pending=place;$('coordinate-description').textContent=`Confirme: ${place.address} (${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}).`;$('place-name').value=place.name;const handler=()=>{if($('coordinate-dialog').returnValue==='confirm'&&pending){place.name=$('place-name').value.trim()||place.name;}};/* Coordinate dialog uses the same confirmed location and editable name. */pending={...place};$('coordinate-dialog').showModal();}};$('results').append(b);});
+  }catch(err){$('results').textContent='A pesquisa não está disponível. Pode adicionar uma localização clicando no mapa ou usando coordenadas.';notify(err.message);}finally{$('search-button').disabled=false;}
+};
+function duration(seconds){const minutes=Math.round(seconds/60);return minutes>=60?`${Math.floor(minutes/60)} h ${minutes%60} min`:`${minutes} min`;}
+$('optimize').onclick=async()=>{
+  if(busy)return;if(!state.stops.length)return notify('Adicione pelo menos um restaurante antes de otimizar.');busy=true;$('optimize').textContent='A calcular por estrada…';
+  for(const el of document.querySelectorAll('button,input'))el.disabled=true;
+  try{const places=[state.depot,...state.stops];const table=await getJSON('https://router.project-osrm.org/table/v1/driving/'+places.map(coords).join(';')+'?annotations=duration');if(table.code!=='Ok')throw new Error('Não foi possível calcular os tempos de condução. Confirme as paragens.');const order=optimizeOrder(table.durations,state.roundtrip);const before=[...state.stops];const ordered=order.map(i=>places[i]);const points=[state.depot,...ordered,...(state.roundtrip?[state.depot]:[])];const data=await getJSON('https://router.project-osrm.org/route/v1/driving/'+points.map(coords).join(';')+'?overview=full&geometries=geojson&steps=false');if(data.code!=='Ok'||!data.routes?.[0])throw new Error('Não foi possível traçar esta rota. Confirme as localizações.');
+    const result=data.routes[0];state.stops=ordered;route={...result,points,roundtrip:state.roundtrip,service:state.service};render();if(line)line.remove();if(map){line=L.geoJSON(result.geometry,{style:{color:'#21684e',weight:5,opacity:.85}}).addTo(map);fit();}
+    $('metric-distance').innerHTML=`${(result.distance/1000).toLocaleString('pt-PT',{maximumFractionDigits:1})}<small> km</small>`;$('metric-time').textContent=duration(result.duration+state.service*60*ordered.length);
+    $('route-note').textContent=`${duration(result.duration)} de condução + ${state.service*ordered.length} min de entregas. ${state.roundtrip?'Inclui regresso à empresa.':'Termina na última entrega.'} Ordem aproximada otimizada; sem trânsito em direto.`;
+    $('route-list').innerHTML=points.map((p,i)=>{const last=i===points.length-1&&state.roundtrip;return `<div class="route-row">${i&&!last?`<input type="checkbox" aria-label="Entrega concluída: ${esc(p.name)}">`:'<span class="number">⌂</span>'}<span class="${i&&!last?'number':''}">${i&&!last?i:''}</span><div><strong>${i===0?'Partida · ':last?'Regresso · ':''}${esc(p.name)}</strong><small>${esc(p.address)}${i?' · '+duration(result.legs[i-1].duration)+' desde a paragem anterior':''}</small></div>${i?`<a href="${navigation(p)}" target="_blank" rel="noopener">Navegar</a>`:''}</div>`;}).join('');$('itinerary').hidden=false;notify('Rota organizada. A sequência está pronta para navegar.');
+  }catch(err){notify(err.name==='TimeoutError'?'O serviço demorou demasiado. Tente novamente.':err.message);}finally{busy=false;for(const el of document.querySelectorAll('button,input'))el.disabled=false;$('optimize').innerHTML='Otimizar a minha rota <span>✧</span>';}
+};
+$('print').onclick=()=>window.print();
+$('export').onclick=()=>{if(!state.stops.length)return notify('Adicione restaurantes para exportar.');const rows=[['Ordem','Nome','Morada','Latitude','Longitude','Navegação'],...([state.depot,...state.stops,...(state.roundtrip?[state.depot]:[])]).map((p,i)=>[i,p.name,p.address,p.lat,p.lon,navigation(p)])];const safe=v=>{const text=String(v);return '"'+(/^[=+@\-]/.test(text)?"'"+text:text).replaceAll('"','""')+'"';};const blob=new Blob(['\ufeff'+rows.map(row=>row.map(safe).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');const url=URL.createObjectURL(blob);a.href=url;a.download='maticaminhos-rota.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);notify(route?'Rota exportada.':'Lista exportada na ordem atual. Otimize para obter uma sequência sugerida.');};
+render();fit();

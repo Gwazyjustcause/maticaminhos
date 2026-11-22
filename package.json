@@ -1,0 +1,15 @@
+{
+  "name": "maticaminhos",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Planeador de rotas de entrega da Matisilva",
+  "scripts": {
+    "dev": "node serve.mjs",
+    "start": "node serve.mjs",
+    "build": "node build.mjs",
+    "test": "node optimizer.test.mjs",
+    "check": "node --check app.js && node --check optimizer.mjs && node --check serve.mjs && node --check build.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
