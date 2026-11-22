@@ -14,7 +14,7 @@ const validPlace=p=>p&&typeof p.name==='string'&&typeof p.address==='string'&&Nu
 const positive=value=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
 const modeValue=value=>value==='avoid'?'avoid':'allow';
 const defaultGroups=[{id:'restaurants',name:'Restaurantes'},{id:'continentes',name:'Continentes'},{id:'pingo-doce',name:'Pingo Doce'}];
-let state={depot:defaultDepot,stops:[],saved:[],groups:defaultGroups,roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{}};
+let state={depot:defaultDepot,stops:[],saved:[],groups:defaultGroups,roundtrip:true,service:10,consumption:null,fuelPrice:null,tollClass:'',mode:'allow',overrides:{},mapStyle:'street'};
 try{
   const data=JSON.parse(localStorage.getItem('maticaminhos-v1'));
   if(data)state={
@@ -24,13 +24,14 @@ try{
     groups:Array.isArray(data.groups)?data.groups.filter(g=>g&&typeof g.id==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(g.id)&&typeof g.name==='string'&&g.name.trim()).slice(0,100).map(g=>({id:g.id,name:g.name.trim().slice(0,40)})):defaultGroups,
     roundtrip:data.roundtrip!==false,service:Number.isFinite(data.service)?Math.max(0,Math.min(120,data.service)):10,
     consumption:positive(data.consumption),fuelPrice:positive(data.fuelPrice),tollClass:/^[1-4]$/.test(data.tollClass)?String(data.tollClass):'',
-    mode:modeValue(data.mode),overrides:Object.fromEntries(Object.entries(data.overrides||{}).filter(([,v])=>v==='allow'||v==='avoid'))
+    mode:modeValue(data.mode),overrides:Object.fromEntries(Object.entries(data.overrides||{}).filter(([,v])=>v==='allow'||v==='avoid')),
+    mapStyle:data.mapStyle==='satellite'?'satellite':'street'
   };
 }catch{}
 state.saved=state.saved.map(p=>({...p,groupId:state.groups.some(g=>g.id===p.groupId)?p.groupId:''}));
 let selectedGroup='all',editingGroup=null;
 let route=null,busy=false,searching=false,changingDepot=false,pending=null,pendingMarker=null,pendingFavorite=false,toastTimer,calculateTimer,results=[],showingFavorites=false,draggedIndex=null;
-let map,markers,routeLines;
+let map,markers,routeLines,streetTiles,satelliteTiles,tileErrors=0;
 const legCache=new Map();
 const roadCache=new Map();
 const tollTraceCache=new Map();
@@ -44,9 +45,10 @@ function notify(message){$('status').textContent=message;$('status').hidden=fals
 function persist(){try{localStorage.setItem('maticaminhos-v1',JSON.stringify(state));}catch{notify('Não foi possível guardar neste navegador. Exporte a lista nas opções.');}}
 function initializeMap(){
   if(!window.L){$('map').innerHTML='<p style="padding:70px 20px">O mapa não carregou. Atualize a página para tentar novamente. Pode continuar a pesquisar locais.</p>';return;}
-  map=L.map('map',{scrollWheelZoom:true,zoomControl:false}).setView([state.depot.lat,state.depot.lon],11);
+  map=L.map('map',{scrollWheelZoom:true,zoomControl:false,maxZoom:21}).setView([state.depot.lat,state.depot.lon],11);
   L.control.zoom({position:'topleft'}).addTo(map);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+  streetTiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxNativeZoom:19,maxZoom:21,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'});
+  setMapStyle(state.mapStyle,false);
   markers=L.layerGroup().addTo(map);routeLines=L.layerGroup().addTo(map);
   map.on('click',event=>{
     if(busy)return;
@@ -56,12 +58,40 @@ function initializeMap(){
   new ResizeObserver(()=>map.invalidateSize()).observe($('map'));
   drawMap(true);
 }
+function setMapStyle(style,save=true){
+  if(!map)return;
+  state.mapStyle=style==='satellite'?'satellite':'street';tileErrors=0;
+  if(state.mapStyle==='satellite'&&!satelliteTiles){
+    satelliteTiles=L.tileLayer.wms('https://ortos.dgterritorio.gov.pt/wms/ortosat2023',{
+      layers:'ortoSat2023-CorVerdadeira',format:'image/png',version:'1.1.1',transparent:true,
+      maxZoom:21,maxNativeZoom:20,noWrap:true,bounds:[[36.9,-9.6],[42.2,-6.1]],
+      attribution:'&copy; <a href="https://www.dgterritorio.gov.pt/dados-abertos">DGT</a> · OrtoSat2023 · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>'
+    });
+    satelliteTiles.on('tileerror',()=>{
+      if(state.mapStyle==='satellite'&&++tileErrors===3){setMapStyle('street');notify('Imagem de satélite indisponível. A mostrar o mapa de ruas.');}
+    });
+    satelliteTiles.on('tileload',()=>{tileErrors=0;});
+  }
+  // Keep streets underneath so sea/outside-imagery areas remain usable.
+  if(!map.hasLayer(streetTiles))streetTiles.addTo(map);
+  if(state.mapStyle==='satellite'){
+    if(!map.hasLayer(satelliteTiles))satelliteTiles.addTo(map);
+  }else if(satelliteTiles&&map.hasLayer(satelliteTiles))map.removeLayer(satelliteTiles);
+  $('map-street').setAttribute('aria-pressed',String(state.mapStyle==='street'));
+  $('map-satellite').setAttribute('aria-pressed',String(state.mapStyle==='satellite'));
+  if(save)persist();
+}
+$('map-street').onclick=()=>setMapStyle('street');
+$('map-satellite').onclick=()=>setMapStyle('satellite');
 function drawMap(fit=false){
   if(!map)return;
   markers.clearLayers();routeLines.clearLayers();
   [state.depot,...state.stops].forEach((p,i)=>L.marker([p.lat,p.lon],{icon:L.divIcon({className:'map-pin'+(!i?' depot-pin':''),html:i||'⌂',iconSize:[32,32],iconAnchor:[16,16]})}).addTo(markers).bindPopup(`<strong>${escapeHTML(p.name)}</strong><br>${escapeHTML(p.address)}`));
   if(route){
-    route.legs.forEach(leg=>L.geoJSON(leg.geometry,{style:{color:leg.mode==='avoid'?'#16867c':'#7166ab',weight:5,opacity:.9}}).addTo(routeLines));
+    route.legs.forEach(leg=>{
+      L.geoJSON(leg.geometry,{style:{color:'white',weight:8,opacity:.8},interactive:false}).addTo(routeLines);
+      L.geoJSON(leg.geometry,{style:{color:leg.mode==='avoid'?'#16867c':'#7166ab',weight:5,opacity:.95}}).addTo(routeLines);
+    });
     for(const p of [state.depot,...state.stops]){const road=roadFor(p);if(road&&road.offset>5){
       L.polyline([[p.lat,p.lon],[road.lat,road.lon]],{color:'#738377',weight:2,dashArray:'3 5',opacity:.7}).addTo(routeLines);
       L.circleMarker([road.lat,road.lon],{radius:5,color:'#17684b',fillColor:'white',fillOpacity:1,weight:2}).addTo(routeLines).bindPopup(`Acesso de viatura · ${Math.round(road.offset)} m de ${escapeHTML(p.name)}`);
