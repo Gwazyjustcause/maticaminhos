@@ -1,7 +1,7 @@
-import {optimizeOrder} from './optimizer.mjs';
-import {fuelEstimate,totalEstimate,confirmedToll} from './costs.mjs';
-import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs';
-import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs';
+import {optimizeOrder} from './optimizer.mjs?v=6';
+import {fuelEstimate,totalEstimate,confirmedToll} from './costs.mjs?v=6';
+import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=6';
+import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs?v=6';
 
 const $=id=>document.getElementById(id);
 const escapeHTML=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
