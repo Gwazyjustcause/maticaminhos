@@ -1,5 +1,5 @@
 import {optimizeOrder} from './optimizer.mjs?v=6';
-import {fuelEstimate,totalEstimate,confirmedToll} from './costs.mjs?v=6';
+import {fuelEstimate,totalEstimate,confirmedToll,tollForLegs} from './costs.mjs?v=11';
 import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation} from './routing.mjs?v=9';
 import {findPlaces,googleLookupURL,parseMapsCoordinates,portugueseFeature} from './search.mjs?v=6';
 
@@ -214,8 +214,12 @@ function renderSummary(){
   $('map-status').textContent=busy?'A calcular os percursos…':route?`${decimal(route.distance/1000)} km · ${duration(route.duration)} no total`:state.stops.length?`${state.stops.length} ${state.stops.length===1?'paragem':'paragens'} no mapa`:'Partida da Matisilva';
   const fuel=route?fuelEstimate(route.distance,state.consumption,state.fuelPrice):null;
   $('fuel-cost').textContent=fuel?money(fuel.cost):'Preencher veículo';$('fuel-preview').textContent=fuel?money(fuel.cost)+' combustível':'—';
-  const toll=route?.toll??null;
-  $('toll-cost').textContent=toll!==null?money(toll):'Por confirmar';
+  const toll=route?tollForLegs(route.legs,route.toll):null;
+  const tollFree=!!route&&route.legs.length>0&&route.legs.every(leg=>leg.hasToll===false);
+  $('toll-cost').textContent=toll!==null?money(toll):route?'Preço por confirmar':'Calcule a rota';
+  $('toll-status').textContent=!route?'Calcule a rota para ver os custos.':tollFree?'O percurso calculado não inclui portagens.':route.toll!==null?'Valor de portagens indicado por si para esta viagem.':`${state.tollClass?'Classe '+state.tollClass+' · ':''}Este percurso tem portagens. Consulte o preço oficial e indique o total abaixo.`;
+  $('toll-amount').disabled=busy||!route||tollFree;
+  $('toll-entry').hidden=tollFree;
   const total=totalEstimate(fuel?.cost??null,toll);$('total-cost').textContent=total!==null?money(total):'—';
 }
 $('stop-list').onclick=event=>{
