@@ -1,6 +1,6 @@
 // Supplemental, source-verified listings that are missing from the public search index.
 export const localPlaces=[{name:'Restaurante O Casimiro',address:'Rua Estrada Nacional 2-3, n.º 21, Silveirinho, 3360-259 São Pedro de Alva, Penacova, Portugal',lat:40.2637622,lon:-8.2775141,countrycode:'PT',source:'https://restauranteocasimiro.eatbu.com/?lang=pt',localities:['São Pedro de Alva','Silveirinho','Penacova']}];
-export const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+export const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/['’]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 export function expandStreet(value){return value.trim().replace(/^r\.(?=\s)/i,'Rua').replace(/^av\.(?=\s)/i,'Avenida').replace(/^tv\.(?=\s)/i,'Travessa').replace(/^p[çc]\.(?=\s)/i,'Praça').replace(/^estr\.(?=\s)/i,'Estrada').replace(/^lg\.(?=\s)/i,'Largo');}
 const roadPattern=/^(rua|avenida|travessa|praça|praca|estrada|largo|alameda|beco|calçada|calcada|urbanização|urbanizacao|rotunda)\b/i;
 const stopWords=new Set(['rua','avenida','travessa','praca','estrada','largo','alameda','beco','calcada','da','de','do','das','dos','a','o','e','restaurante','restaurantes','cafe']);
@@ -25,8 +25,20 @@ export function portugueseFeature(feature){const p=feature?.properties,c=feature
 const adminNames=p=>[p.city,p.town,p.village,p.district,p.locality,p.name].filter(Boolean);
 export function inferTown(features,parsed){
   const query=normalize(parsed.term);
-  const names=features.filter(portugueseFeature).flatMap(f=>adminNames(f.properties)).filter(name=>query.endsWith(' '+normalize(name))&&normalize(name).length>=3);
+  const names=features.filter(portugueseFeature).flatMap(f=>{
+    const p=f.properties;
+    return [p.city,p.town,p.village,p.district,p.locality,...(['place','boundary'].includes(p.osm_key)?[p.name]:[])].filter(Boolean);
+  }).filter(name=>query.endsWith(' '+normalize(name))&&normalize(name).length>=3);
   return names.sort((a,b)=>normalize(b).length-normalize(a).length)[0]||'';
+}
+function townSuffixes(parsed){
+  if(parsed.street||parsed.town||/^\d/.test(parsed.term)||catalogMatches(parsed).length)return [];
+  if(/^(continente(?: modelo| bom dia)?|pingo doce|lidl|aldi|auchan|intermarche|minipreco)$/.test(normalize(parsed.term)))return [];
+  const words=parsed.term.trim().split(/\s+/),candidates=[];
+  const connector=parsed.term.match(/\s+(?:em|no|na)\s+(.+)$/i);
+  if(connector)candidates.push(connector[1]);
+  for(let count=Math.min(4,words.length-1);count>0;count--)candidates.push(words.slice(-count).join(' '));
+  return [...new Set(candidates)].filter(s=>normalize(s).length>=3);
 }
 function distance(a,b){const rad=x=>x*Math.PI/180,dLat=rad(a.lat-b.lat),dLon=rad(a.lon-b.lon);return 6371000*2*Math.asin(Math.min(1,Math.sqrt(Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2)));}
 function bbox(context){
@@ -63,16 +75,29 @@ export async function findPlaces(raw,town,depot,fetchPhoton){
   let parsed=parseSearch(raw,town),context=null;
   const base={countrycode:'PT',limit:'12'};
   const call=(endpoint,params)=>fetchPhoton(endpoint,new URLSearchParams({...base,...params}));
-  async function resolveTown(){
-    if(!parsed.town)return null;
-    const data=await call('api/',{q:parsed.town});
+  async function resolveTown(name=parsed.town){
+    if(!name)return null;
+    const data=await call('api/',{q:name});
     const rank=f=>({city:0,town:1,village:2,suburb:3,hamlet:4}[f.properties.osm_value]??({city:0,locality:2,district:5,county:6}[f.properties.type]??7));
-    return (data.features||[]).filter(portugueseFeature).filter(f=>['place','boundary'].includes(f.properties.osm_key)&&normalize(f.properties.name)===normalize(parsed.town)).sort((a,b)=>rank(a)-rank(b))[0]||null;
+    return (data.features||[]).filter(portugueseFeature).filter(f=>['place','boundary'].includes(f.properties.osm_key)&&normalize(f.properties.name)===normalize(name)).sort((a,b)=>rank(a)-rank(b))[0]||null;
   }
   context=await resolveTown();
   const query=()=>call('api/',{q:parsed.town&&!context?`${parsed.term}, ${parsed.town}`:parsed.term,lat:context?.geometry.coordinates[1]??depot.lat,lon:context?.geometry.coordinates[0]??depot.lon,...(context?{bbox:bbox(context)}:{}),...(parsed.supermarket?{osm_tag:'shop:supermarket'}:{})});
   let data=await query();
-  if(!parsed.town){const inferred=inferTown(data.features||[],parsed);if(inferred){parsed=parseSearch(raw,inferred);context=await resolveTown();data=await query();}}
+  const combinedFeatures=data.features||[];
+  if(!parsed.town){
+    let inferred=inferTown(combinedFeatures,parsed);
+    if(inferred){parsed=parseSearch(raw,inferred);context=await resolveTown();}
+    else{
+      // Resolve the city independently when the provider cannot understand a
+      // business + city phrase. Never accept an unverified suffix as a city.
+      for(const candidate of townSuffixes(parsed)){
+        const locality=await resolveTown(candidate);
+        if(locality){inferred=locality.properties.name;parsed=parseSearch(raw,candidate);context=locality;break;}
+      }
+    }
+    if(inferred)data={features:[...((await query()).features||[]),...combinedFeatures]};
+  }
   let features=(data.features||[]).filter(f=>matchesFeature(f,parsed,context));
   if(parsed.street&&parsed.town&&!features.length){
     try{const structured=await call('structured',{street:parsed.streetName,city:context?.properties.city||parsed.town,...(parsed.house?{housenumber:parsed.house}:{}),...(context?{bbox:bbox(context)}:{})});features=(structured.features||[]).filter(f=>matchesFeature(f,parsed,context));}catch{}

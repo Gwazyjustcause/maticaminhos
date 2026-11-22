@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {parseSearch,expandStreet,portugueseFeature,matchesFeature,catalogMatches,findPlaces,parseMapsCoordinates,googleMapsURL,resolveMapsLink} from './search.mjs';
+import {parseSearch,expandStreet,portugueseFeature,matchesFeature,catalogMatches,findPlaces,parseMapsCoordinates,googleMapsURL,resolveMapsLink,inferTown,normalize} from './search.mjs';
 const feature=(properties,coordinates=[-7.9054,40.6122])=>({type:'Feature',properties:{countrycode:'PT',...properties},geometry:{type:'Point',coordinates}});
 assert.equal(expandStreet('R. Bela Vista'),'Rua Bela Vista');
 let parsed=parseSearch('R. Bela Vista, São João de Lourosa');
@@ -52,6 +52,34 @@ assert.deepEqual(viseuResults.places.map(p=>p.name),['Continente','Continente Mo
 assert.equal(viseuResults.parsed.town,'Viseu');assert.equal(viseuResults.parsed.term,'continente');
 assert.ok(viseuCalls.some(params=>params.get('lat')==='40.6574713'&&params.get('bbox')==='-8.0915889,40.5357325,-7.7589842,40.8425998'),'Search the city extent, including stores outside its centre.');
 for(const item of notStores)assert.equal(matchesFeature(item,parseSearch('Continente','Viseu'),viseuCity),false);
+const guarda=feature({name:'Guarda',osm_key:'place',osm_value:'city',type:'city'},[-7.265,40.537]);
+const pingo=feature({name:'Pingo Doce',city:'Guarda',osm_key:'shop',osm_value:'supermarket'},[-7.25,40.54]);
+const otherCity=feature({name:'Pingo Doce',city:'Seia',county:'Guarda',osm_key:'shop',osm_value:'supermarket'},[-7.7,40.4]);
+const pingoResults=await findPlaces('Pingo doce Guarda','',depot,async(endpoint,params)=>{
+  assert.equal(params.get('countrycode'),'PT');
+  return {features:params.get('q')==='Guarda'?[guarda]:[pingo,otherCity]};
+});
+assert.equal(pingoResults.parsed.term,'Pingo doce');assert.equal(pingoResults.parsed.town,'Guarda');assert.equal(pingoResults.places.length,1);
+assert.match(pingoResults.places[0].address,/Guarda/);
+assert.equal(normalize('McDonald’s'),normalize('McDonalds'));
+const burger=feature({name:"McDonald's",city:'Guarda',osm_key:'amenity',osm_value:'fast_food'},[-7.26,40.53]);
+const burgerResults=await findPlaces('McDonalds Guarda','',depot,async(endpoint,params)=>({features:params.get('q')==='Guarda'?[guarda]:[burger]}));
+assert.equal(burgerResults.places[0].name,"McDonald's");
+assert.equal(inferTown([feature({name:'O Porto',city:'Lisboa',osm_key:'amenity',osm_value:'restaurant'})],parseSearch('Restaurante O Porto')),'','Business names alone must not be treated as administrative localities.');
+// An arbitrary business and a multi-word city must work even when the combined
+// phrase returns no geocoder result; no brand or city catalogue is involved.
+const fallbackRequests=[];
+const bakery=feature({name:'Padaria Aurora',city:'Vila Nova de Famalicão',osm_key:'shop',osm_value:'bakery'},[-8.52,41.41]);
+const bakeryResults=await findPlaces('Padaria Aurora Vila Nova de Famalicao','',depot,async(endpoint,params)=>{
+  assert.equal(params.get('countrycode'),'PT');fallbackRequests.push(params);
+  if(normalize(params.get('q'))==='vila nova de famalicao')return {features:[feature({name:'Vila Nova de Famalicão',osm_key:'place',osm_value:'city'},[-8.52,41.41])]};
+  return {features:params.get('q')==='Padaria Aurora'?[bakery]:[]};
+});
+assert.equal(bakeryResults.places[0].name,'Padaria Aurora');assert.equal(normalize(bakeryResults.parsed.town),'vila nova de famalicao');
+assert.ok(fallbackRequests.some(p=>p.has('bbox')&&p.get('q')==='Padaria Aurora'));
+const falseSuffix=await findPlaces('Padaria Aurora Madrid','',depot,async()=>({features:[feature({name:'Madrid',countrycode:'ES',osm_key:'place',osm_value:'city'})]}));
+assert.equal(falseSuffix.parsed.town,'');assert.equal(falseSuffix.places.length,0,'Foreign or unverified city suffixes must never be accepted.');
+console.log('Passed: general business/city searches, Pingo Doce Guarda, punctuation variants and independent multi-word locality fallback.');
 const imported=parseMapsCoordinates('https://www.google.com/maps/place/Test/@40,-8,14z/data=!3d40.2637622!4d-8.2775141');assert.equal(imported.lat,40.2637622);assert.equal(imported.lon,-8.2775141);
 assert.equal(parseMapsCoordinates('https://google.com.evil.test/maps/@40,-8,14z'),null);
 assert.equal(parseMapsCoordinates('https://www.google.com/maps?q=40.2,-8.3').lat,40.2);

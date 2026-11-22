@@ -2,7 +2,7 @@ import {optimizeOrder} from './optimizer.mjs?v=6';
 import {fuelEstimate,totalEstimate,tollForLegs} from './costs.mjs?v=11';
 import {tollTracePayload,priceTollTrace,totalTollPrices,selectedTollPrice} from './tolls.mjs?v=15';
 import {pointKey,legKey,tripLegs,routeBatches,routePayload,parseTrip,totalTrip,moveStop,normalizeQuery,costing,matrixBatches,matrixTimes,accessKey,roadAccessPayload,resolveRoadAccess,routingLocation,distanceMetres,restoreAccessMemory,rememberAccess,withRememberedAccess} from './routing.mjs?v=18';
-import {findPlaces,googleLookupURL,googleMapsURL,resolveMapsLink,portugueseFeature} from './search.mjs?v=20';
+import {findPlaces,googleLookupURL,googleMapsURL,resolveMapsLink,portugueseFeature} from './search.mjs?v=21';
 
 const $=id=>document.getElementById(id);
 const escapeHTML=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
