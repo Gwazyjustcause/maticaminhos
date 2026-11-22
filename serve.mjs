@@ -6,7 +6,8 @@ const assets=new Map([
   ['/style.css',['style.css','text/css']],
   ['/app.js',['app.js','text/javascript']],
   ['/optimizer.mjs',['optimizer.mjs','text/javascript']],
-  ['/costs.mjs',['costs.mjs','text/javascript']]
+  ['/costs.mjs',['costs.mjs','text/javascript']],
+  ['/routing.mjs',['routing.mjs','text/javascript']]
 ]);
 const port=Number(process.env.PORT)||4173;
 http.createServer(async(req,res)=>{

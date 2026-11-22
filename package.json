@@ -8,8 +8,9 @@
     "dev": "node serve.mjs",
     "start": "node serve.mjs",
     "build": "node build.mjs",
-    "test": "node optimizer.test.mjs && node costs.test.mjs",
-    "check": "node --check app.js && node --check optimizer.mjs && node --check costs.mjs && node --check serve.mjs && node --check build.mjs"
+    "test": "node optimizer.test.mjs && node costs.test.mjs && node routing.test.mjs",
+    "test:live": "node routing-live-check.mjs",
+    "check": "node --check app.js && node --check optimizer.mjs && node --check costs.mjs && node --check routing.mjs && node --check serve.mjs && node --check build.mjs"
   },
   "engines": { "node": ">=20" }
 }
